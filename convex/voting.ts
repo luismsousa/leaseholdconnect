@@ -1,339 +1,269 @@
 import { v } from "convex/values";
-import { query, mutation, QueryCtx, MutationCtx } from "./_generated/server";
-import { getAuthUserId } from "@convex-dev/auth/server";
-import { internal } from "./_generated/api";
+import { query, mutation } from "./_generated/server";
+import { getClerkUserId } from "./clerkHelpers";
+import { Id } from "./_generated/dataModel";
 
-async function requireAuth(ctx: QueryCtx | MutationCtx) {
-  const userId = await getAuthUserId(ctx);
+// Helper function to check if user is member of association
+async function requireAssociationMember(ctx: any, associationId: Id<"associations">) {
+  const userId = await getClerkUserId(ctx);
   if (!userId) {
     throw new Error("Authentication required");
   }
-  return userId;
-}
 
-async function getCurrentMember(ctx: QueryCtx | MutationCtx) {
-  const userId = await requireAuth(ctx);
-  const user = await ctx.db.get(userId);
-  if (!user) {
-    throw new Error("User not found");
+  const membership = await ctx.db
+    .query("associationMembers")
+    .withIndex("by_association_and_user", (q: any) => 
+      q.eq("associationId", associationId).eq("userId", userId)
+    )
+    .filter((q: any) => q.eq(q.field("status"), "active"))
+    .first();
+
+  if (!membership) {
+    throw new Error("Not authorized for this association");
   }
 
-  const member = await ctx.db
-    .query("members")
-    .withIndex("by_email", (q) => q.eq("email", user.email || ""))
-    .unique();
-  
-  if (!member) {
-    throw new Error("Member not found");
-  }
-
-  return { userId, user, member };
+  return { userId, membership };
 }
 
-async function requireAdmin(ctx: QueryCtx | MutationCtx) {
-  const { userId, user, member } = await getCurrentMember(ctx);
+async function requireAssociationAdmin(ctx: any, associationId: Id<"associations">) {
+  const { userId, membership } = await requireAssociationMember(ctx, associationId);
   
-  if (member.role !== "admin") {
+  if (membership.role !== "owner" && membership.role !== "admin") {
     throw new Error("Admin access required");
   }
-  
-  return { userId, user, member };
+
+  return { userId, membership };
 }
 
-export const createVotingTopic = mutation({
+// List voting topics for an association
+export const listTopics = query({
+  args: { 
+    associationId: v.id("associations"),
+    status: v.optional(v.union(v.literal("draft"), v.literal("active"), v.literal("closed"))),
+  },
+  handler: async (ctx, args) => {
+    await requireAssociationMember(ctx, args.associationId);
+
+    let query = ctx.db
+      .query("votingTopics")
+      .withIndex("by_association", (q) => q.eq("associationId", args.associationId));
+
+    if (args.status) {
+      query = ctx.db
+        .query("votingTopics")
+        .withIndex("by_association_and_status", (q) => 
+          q.eq("associationId", args.associationId).eq("status", args.status!)
+        );
+    }
+
+    const topics = await query.order("desc").collect();
+
+    // Get vote counts for each topic
+    const topicsWithCounts = await Promise.all(
+      topics.map(async (topic) => {
+        const votes = await ctx.db
+          .query("votes")
+          .withIndex("by_association_and_topic", (q) => 
+            q.eq("associationId", args.associationId).eq("topicId", topic._id)
+          )
+          .collect();
+
+        const voteCounts: Record<string, number> = {};
+        topic.options.forEach(option => {
+          voteCounts[option] = 0;
+        });
+
+        votes.forEach(vote => {
+          vote.selectedOptions.forEach(option => {
+            voteCounts[option] = (voteCounts[option] || 0) + 1;
+          });
+        });
+
+        return {
+          ...topic,
+          totalVotes: votes.length,
+          voteCounts,
+        };
+      })
+    );
+
+    return topicsWithCounts;
+  },
+});
+
+// Create voting topic
+export const createTopic = mutation({
   args: {
+    associationId: v.id("associations"),
     title: v.string(),
     description: v.string(),
     options: v.array(v.string()),
     startDate: v.number(),
     endDate: v.number(),
     allowMultipleVotes: v.boolean(),
-    visibilityType: v.union(v.literal("all"), v.literal("units"), v.literal("admin")),
+    visibilityType: v.optional(v.union(v.literal("all"), v.literal("units"), v.literal("admin"))),
     visibleToUnits: v.optional(v.array(v.string())),
+    meetingId: v.optional(v.id("meetings")),
   },
   handler: async (ctx, args) => {
-    const { userId, member } = await requireAdmin(ctx);
-    
+    const { userId } = await requireAssociationAdmin(ctx, args.associationId);
+
     const topicId = await ctx.db.insert("votingTopics", {
-      title: args.title,
-      description: args.description,
-      options: args.options,
+      ...args,
+      status: "draft",
       createdBy: userId,
       createdAt: Date.now(),
-      startDate: args.startDate,
-      endDate: args.endDate,
-      status: "draft",
-      allowMultipleVotes: args.allowMultipleVotes,
-      visibilityType: args.visibilityType,
-      visibleToUnits: args.visibleToUnits,
     });
 
-    // Log audit event
-    await ctx.runMutation(internal.audit.logAuditEvent, {
-      userId,
-      memberId: member._id,
-      action: "voting_topic_created",
-      entityType: "voting_topic",
-      entityId: topicId,
-      description: `Created voting topic "${args.title}" with ${args.options.length} options`,
-      metadata: {
-        title: args.title,
-        optionsCount: args.options.length,
-        options: args.options,
-        startDate: args.startDate,
-        endDate: args.endDate,
-        allowMultipleVotes: args.allowMultipleVotes,
-        visibilityType: args.visibilityType,
-        visibleToUnits: args.visibleToUnits,
-      },
-    });
+    return topicId;
   },
 });
 
-export const listVotingTopics = query({
+// Update voting topic
+export const updateTopic = mutation({
   args: {
+    id: v.id("votingTopics"),
+    title: v.optional(v.string()),
+    description: v.optional(v.string()),
+    options: v.optional(v.array(v.string())),
+    startDate: v.optional(v.number()),
+    endDate: v.optional(v.number()),
     status: v.optional(v.union(v.literal("draft"), v.literal("active"), v.literal("closed"))),
+    allowMultipleVotes: v.optional(v.boolean()),
   },
   handler: async (ctx, args) => {
-    const { member } = await getCurrentMember(ctx);
-    
-    let topics = await ctx.db.query("votingTopics").order("desc").collect();
-    
-    // Filter topics based on member's access level and unit
-    topics = topics.filter(topic => {
-      // Admins can see all topics
-      if (member.role === "admin") {
-        return true;
-      }
-      
-      // Check visibility type (default to "all" for backward compatibility)
-      const visibilityType = topic.visibilityType || "all";
-      
-      if (visibilityType === "admin") {
-        return false; // Only admins can see admin-only topics
-      }
-      
-      if (visibilityType === "all") {
-        return true; // All members can see these topics
-      }
-      
-      if (visibilityType === "units" && topic.visibleToUnits && member.unit) {
-        return topic.visibleToUnits.includes(member.unit);
-      }
-      
-      // Default to showing all topics for backward compatibility
-      return true;
-    });
-
-    // Filter by status if specified
-    if (args.status) {
-      topics = topics.filter(topic => topic.status === args.status);
-    }
-    
-    return topics;
-  },
-});
-
-export const activateVotingTopic = mutation({
-  args: {
-    topicId: v.id("votingTopics"),
-  },
-  handler: async (ctx, args) => {
-    const { userId, member } = await requireAdmin(ctx);
-    
-    const topic = await ctx.db.get(args.topicId);
+    const topic = await ctx.db.get(args.id);
     if (!topic) {
       throw new Error("Voting topic not found");
     }
-    
-    await ctx.db.patch(args.topicId, {
-      status: "active",
-    });
 
-    // Log audit event
-    await ctx.runMutation(internal.audit.logAuditEvent, {
-      userId,
-      memberId: member._id,
-      action: "voting_topic_activated",
-      entityType: "voting_topic",
-      entityId: args.topicId,
-      description: `Activated voting topic "${topic.title}"`,
-      metadata: {
-        title: topic.title,
-        startDate: topic.startDate,
-        endDate: topic.endDate,
-      },
-    });
+    await requireAssociationAdmin(ctx, topic.associationId);
+
+    const { id, ...updates } = args;
+    await ctx.db.patch(id, updates);
+
+    return id;
   },
 });
 
-export const closeVotingTopic = mutation({
-  args: {
-    topicId: v.id("votingTopics"),
-  },
-  handler: async (ctx, args) => {
-    const { userId, member } = await requireAdmin(ctx);
-    
-    const topic = await ctx.db.get(args.topicId);
-    if (!topic) {
-      throw new Error("Voting topic not found");
-    }
-    
-    await ctx.db.patch(args.topicId, {
-      status: "closed",
-    });
-
-    // Log audit event
-    await ctx.runMutation(internal.audit.logAuditEvent, {
-      userId,
-      memberId: member._id,
-      action: "voting_topic_closed",
-      entityType: "voting_topic",
-      entityId: args.topicId,
-      description: `Closed voting topic "${topic.title}"`,
-      metadata: {
-        title: topic.title,
-        endDate: topic.endDate,
-      },
-    });
-  },
-});
-
-export const castVote = mutation({
+// Cast vote
+export const vote = mutation({
   args: {
     topicId: v.id("votingTopics"),
     selectedOptions: v.array(v.string()),
   },
   handler: async (ctx, args) => {
-    const { userId, member } = await getCurrentMember(ctx);
-    
-    if (member.status !== "active") {
-      throw new Error("Only active members can vote");
-    }
-
     const topic = await ctx.db.get(args.topicId);
     if (!topic) {
       throw new Error("Voting topic not found");
     }
-    
-    // Check if member can access this topic
-    if (member.role !== "admin") {
-      const visibilityType = topic.visibilityType || "all";
-      
-      if (visibilityType === "admin") {
-        throw new Error("Access denied");
-      }
-      
-      if (visibilityType === "units" && topic.visibleToUnits && member.unit) {
-        if (!topic.visibleToUnits.includes(member.unit)) {
-          throw new Error("This voting topic is not available for your unit");
-        }
-      }
-    }
-    
+
     if (topic.status !== "active") {
-      throw new Error("Voting is not active for this topic");
-    }
-    
-    if (Date.now() > topic.endDate) {
-      throw new Error("Voting period has ended");
+      throw new Error("Voting is not currently active for this topic");
     }
 
-    // Check if user already voted
+    const now = Date.now();
+    if (now < topic.startDate || now > topic.endDate) {
+      throw new Error("Voting period has ended or not yet started");
+    }
+
+    const { userId } = await requireAssociationMember(ctx, topic.associationId);
+
+    // Get current member
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity?.email) {
+      throw new Error("User email not found");
+    }
+
+    const member = await ctx.db
+      .query("members")
+      .withIndex("by_association_and_email", (q) => 
+        q.eq("associationId", topic.associationId).eq("email", identity.email!)
+      )
+      .first();
+
+    if (!member) {
+      throw new Error("Member record not found");
+    }
+
+    // Validate selected options
+    const invalidOptions = args.selectedOptions.filter(option => 
+      !topic.options.includes(option)
+    );
+    if (invalidOptions.length > 0) {
+      throw new Error(`Invalid options: ${invalidOptions.join(", ")}`);
+    }
+
+    if (!topic.allowMultipleVotes && args.selectedOptions.length > 1) {
+      throw new Error("Multiple votes not allowed for this topic");
+    }
+
+    // Check if user has already voted
     const existingVote = await ctx.db
       .query("votes")
       .withIndex("by_member_and_topic", (q) => 
         q.eq("memberId", member._id).eq("topicId", args.topicId)
       )
-      .unique();
-    
+      .first();
+
     if (existingVote) {
-      throw new Error("You have already voted on this topic");
-    }
-
-    // Validate selected options
-    if (!topic.allowMultipleVotes && args.selectedOptions.length > 1) {
-      throw new Error("Multiple votes not allowed for this topic");
-    }
-    
-    for (const option of args.selectedOptions) {
-      if (!topic.options.includes(option)) {
-        throw new Error("Invalid voting option");
-      }
-    }
-
-    const voteId = await ctx.db.insert("votes", {
-      topicId: args.topicId,
-      memberId: member._id,
-      selectedOptions: args.selectedOptions,
-      votedAt: Date.now(),
-    });
-
-    // Log audit event
-    await ctx.runMutation(internal.audit.logAuditEvent, {
-      userId,
-      memberId: member._id,
-      action: "vote_cast",
-      entityType: "vote",
-      entityId: voteId,
-      description: `Cast vote on "${topic.title}" with ${args.selectedOptions.length} selection(s)`,
-      metadata: {
-        topicTitle: topic.title,
-        topicId: args.topicId,
+      // Update existing vote
+      await ctx.db.patch(existingVote._id, {
         selectedOptions: args.selectedOptions,
-        memberUnit: member.unit,
-      },
-    });
+        votedAt: Date.now(),
+      });
+      return existingVote._id;
+    } else {
+      // Create new vote
+      const voteId = await ctx.db.insert("votes", {
+        associationId: topic.associationId,
+        topicId: args.topicId,
+        memberId: member._id,
+        selectedOptions: args.selectedOptions,
+        votedAt: Date.now(),
+      });
+      return voteId;
+    }
   },
 });
 
-export const getVotingResults = query({
+// Get user's vote for a topic
+export const getUserVote = query({
   args: {
     topicId: v.id("votingTopics"),
   },
   handler: async (ctx, args) => {
-    const { member } = await getCurrentMember(ctx);
-    
     const topic = await ctx.db.get(args.topicId);
     if (!topic) {
       throw new Error("Voting topic not found");
     }
 
-    // Check if member can access this topic
-    if (member.role !== "admin") {
-      const visibilityType = topic.visibilityType || "all";
-      
-      if (visibilityType === "admin") {
-        throw new Error("Access denied");
-      }
-      
-      if (visibilityType === "units" && topic.visibleToUnits && member.unit) {
-        if (!topic.visibleToUnits.includes(member.unit)) {
-          throw new Error("Access denied");
-        }
-      }
+    const { userId } = await requireAssociationMember(ctx, topic.associationId);
+
+    // Get current member
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity?.email) {
+      return null;
     }
 
-    const votes = await ctx.db
+    const member = await ctx.db
+      .query("members")
+      .withIndex("by_association_and_email", (q) => 
+        q.eq("associationId", topic.associationId).eq("email", identity.email!)
+      )
+      .first();
+
+    if (!member) {
+      return null;
+    }
+
+    const vote = await ctx.db
       .query("votes")
-      .withIndex("by_topic", (q) => q.eq("topicId", args.topicId))
-      .collect();
+      .withIndex("by_member_and_topic", (q) => 
+        q.eq("memberId", member._id).eq("topicId", args.topicId)
+      )
+      .first();
 
-    const results: Record<string, number> = {};
-    topic.options.forEach(option => {
-      results[option] = 0;
-    });
-
-    votes.forEach(vote => {
-      vote.selectedOptions.forEach(option => {
-        results[option] = (results[option] || 0) + 1;
-      });
-    });
-
-    return {
-      topic,
-      results,
-      totalVotes: votes.length,
-    };
+    return vote;
   },
 });

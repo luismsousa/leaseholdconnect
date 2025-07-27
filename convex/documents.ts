@@ -1,45 +1,79 @@
 import { v } from "convex/values";
-import { query, mutation, QueryCtx, MutationCtx } from "./_generated/server";
-import { getAuthUserId } from "@convex-dev/auth/server";
-import { internal } from "./_generated/api";
+import { query, mutation } from "./_generated/server";
+import { getClerkUserId } from "./clerkHelpers";
+import { Id } from "./_generated/dataModel";
 
-async function requireAuth(ctx: QueryCtx | MutationCtx) {
-  const userId = await getAuthUserId(ctx);
+// Helper function to check if user is admin of association
+async function requireAssociationMember(ctx: any, associationId: Id<"associations">) {
+  const userId = await getClerkUserId(ctx);
   if (!userId) {
     throw new Error("Authentication required");
   }
-  return userId;
-}
 
-async function getCurrentMember(ctx: QueryCtx | MutationCtx) {
-  const userId = await requireAuth(ctx);
-  const user = await ctx.db.get(userId);
-  if (!user) {
-    throw new Error("User not found");
+  const membership = await ctx.db
+    .query("associationMembers")
+    .withIndex("by_association_and_user", (q: any) => 
+      q.eq("associationId", associationId).eq("userId", userId)
+    )
+    .filter((q: any) => q.eq(q.field("status"), "active"))
+    .first();
+
+  if (!membership) {
+    throw new Error("Not authorized for this association");
   }
 
-  const member = await ctx.db
-    .query("members")
-    .withIndex("by_email", (q) => q.eq("email", user.email || ""))
-    .unique();
+  return { userId, membership };
+}
+
+async function requireAssociationAdmin(ctx: any, associationId: Id<"associations">) {
+  const { userId, membership } = await requireAssociationMember(ctx, associationId);
   
-  if (!member) {
-    throw new Error("Member not found");
+  if (membership.role !== "owner" && membership.role !== "admin") {
+    throw new Error("Admin access required");
   }
 
-  return { userId, user, member };
+  return { userId, membership };
 }
 
-export const generateUploadUrl = mutation({
-  args: {},
-  handler: async (ctx) => {
-    await requireAuth(ctx);
-    return await ctx.storage.generateUploadUrl();
+// List documents for an association
+export const list = query({
+  args: { 
+    associationId: v.id("associations"),
+    category: v.optional(v.string()),
+  },
+  handler: async (ctx, args) => {
+    await requireAssociationMember(ctx, args.associationId);
+
+    let query = ctx.db
+      .query("documents")
+      .withIndex("by_association", (q) => q.eq("associationId", args.associationId));
+
+    if (args.category) {
+      query = ctx.db
+        .query("documents")
+        .withIndex("by_association_and_category", (q) => 
+          q.eq("associationId", args.associationId).eq("category", args.category!)
+        );
+    }
+
+    const documents = await query.order("desc").collect();
+
+    // Get signed URLs for documents
+    const documentsWithUrls = await Promise.all(
+      documents.map(async (doc) => {
+        const url = await ctx.storage.getUrl(doc.fileId);
+        return { ...doc, url };
+      })
+    );
+
+    return documentsWithUrls;
   },
 });
 
-export const uploadDocument = mutation({
+// Upload document
+export const create = mutation({
   args: {
+    associationId: v.id("associations"),
     title: v.string(),
     description: v.optional(v.string()),
     category: v.string(),
@@ -49,189 +83,66 @@ export const uploadDocument = mutation({
     isPublic: v.boolean(),
     visibilityType: v.union(v.literal("all"), v.literal("units"), v.literal("admin")),
     visibleToUnits: v.optional(v.array(v.string())),
+    meetingId: v.optional(v.id("meetings")),
   },
   handler: async (ctx, args) => {
-    const { userId, member } = await getCurrentMember(ctx);
-    
-    const documentId = await ctx.db.insert("documents", {
-      title: args.title,
-      description: args.description,
-      category: args.category,
-      fileId: args.fileId,
-      fileName: args.fileName,
-      fileSize: args.fileSize,
-      uploadedBy: userId,
-      uploadedAt: Date.now(),
-      isPublic: args.isPublic,
-      visibilityType: args.visibilityType,
-      visibleToUnits: args.visibleToUnits,
-    });
+    const { userId } = await requireAssociationAdmin(ctx, args.associationId);
 
-    // Log audit event
-    await ctx.runMutation(internal.audit.logAuditEvent, {
-      userId,
-      memberId: member._id,
-      action: "document_uploaded",
-      entityType: "document",
-      entityId: documentId,
-      description: `Uploaded document "${args.title}" in category ${args.category}`,
-      metadata: {
-        title: args.title,
-        category: args.category,
-        fileName: args.fileName,
-        fileSize: args.fileSize,
-        visibilityType: args.visibilityType,
-        visibleToUnits: args.visibleToUnits,
-        isPublic: args.isPublic,
-      },
-    });
-  },
-});
-
-export const listDocuments = query({
-  args: {
-    category: v.optional(v.string()),
-  },
-  handler: async (ctx, args) => {
-    const { member } = await getCurrentMember(ctx);
-    
-    let documents = await ctx.db.query("documents").order("desc").collect();
-    
-    // Filter documents based on member's access level and unit
-    documents = documents.filter(doc => {
-      // Admins can see all documents
-      if (member.role === "admin") {
-        return true;
-      }
-      
-      // Check visibility type (default to "all" for backward compatibility)
-      const visibilityType = doc.visibilityType || "all";
-      
-      if (visibilityType === "admin") {
-        return false; // Only admins can see admin-only documents
-      }
-      
-      if (visibilityType === "all") {
-        return doc.isPublic; // Public documents visible to all
-      }
-      
-      if (visibilityType === "units" && doc.visibleToUnits && member.unit) {
-        return doc.visibleToUnits.includes(member.unit);
-      }
-      
-      // Default to public documents only
-      return doc.isPublic;
-    });
-
-    // Filter by category if specified
-    if (args.category) {
-      documents = documents.filter(doc => doc.category === args.category);
+    // Get current member to use as uploader
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity?.email) {
+      throw new Error("User email not found");
     }
 
-    return Promise.all(
-      documents.map(async (doc) => ({
-        ...doc,
-        downloadUrl: await ctx.storage.getUrl(doc.fileId),
-      }))
-    );
-  },
-});
+    const member = await ctx.db
+      .query("members")
+      .withIndex("by_association_and_email", (q) => 
+        q.eq("associationId", args.associationId).eq("email", identity.email!)
+      )
+      .first();
 
-export const getDocumentCategories = query({
-  args: {},
-  handler: async (ctx) => {
-    const { member } = await getCurrentMember(ctx);
-    
-    let documents = await ctx.db.query("documents").collect();
-    
-    // Filter documents based on member's access level and unit
-    documents = documents.filter(doc => {
-      if (member.role === "admin") {
-        return true;
-      }
-      
-      const visibilityType = doc.visibilityType || "all";
-      
-      if (visibilityType === "admin") {
-        return false;
-      }
-      
-      if (visibilityType === "all") {
-        return doc.isPublic;
-      }
-      
-      if (visibilityType === "units" && doc.visibleToUnits && member.unit) {
-        return doc.visibleToUnits.includes(member.unit);
-      }
-      
-      return doc.isPublic;
+    if (!member) {
+      throw new Error("Member record not found");
+    }
+
+    const documentId = await ctx.db.insert("documents", {
+      ...args,
+      uploadedBy: member._id,
+      uploadedAt: Date.now(),
     });
-    
-    const categories = [...new Set(documents.map(doc => doc.category))];
-    return categories.sort();
+
+    return documentId;
   },
 });
 
-export const deleteDocument = mutation({
+// Generate upload URL
+export const generateUploadUrl = mutation({
+  args: { associationId: v.id("associations") },
+  handler: async (ctx, args) => {
+    await requireAssociationAdmin(ctx, args.associationId);
+    return await ctx.storage.generateUploadUrl();
+  },
+});
+
+// Delete document
+export const remove = mutation({
   args: {
-    documentId: v.id("documents"),
+    id: v.id("documents"),
   },
   handler: async (ctx, args) => {
-    const { userId, member } = await getCurrentMember(ctx);
-    
-    const document = await ctx.db.get(args.documentId);
+    const document = await ctx.db.get(args.id);
     if (!document) {
       throw new Error("Document not found");
     }
-    
-    // Only allow deletion by the uploader or admin
-    if (document.uploadedBy !== userId && member.role !== "admin") {
-      throw new Error("Permission denied");
-    }
-    
-    await ctx.db.delete(args.documentId);
 
-    // Log audit event
-    await ctx.runMutation(internal.audit.logAuditEvent, {
-      userId,
-      memberId: member._id,
-      action: "document_deleted",
-      entityType: "document",
-      entityId: args.documentId,
-      description: `Deleted document "${document.title}" from category ${document.category}`,
-      metadata: {
-        title: document.title,
-        category: document.category,
-        fileName: document.fileName,
-        fileSize: document.fileSize,
-        wasUploadedBy: document.uploadedBy === userId ? "self" : "other",
-      },
-    });
-  },
-});
+    await requireAssociationAdmin(ctx, document.associationId);
 
-export const getAvailableUnits = query({
-  args: {},
-  handler: async (ctx) => {
-    await requireAuth(ctx);
+    // Delete the file from storage
+    await ctx.storage.delete(document.fileId);
     
-    // Get units from the units table if it exists, otherwise fall back to members
-    try {
-      const units = await ctx.db.query("units").collect();
-      if (units.length > 0) {
-        return units
-          .filter(unit => unit.status === "active")
-          .map(unit => unit.name)
-          .sort();
-      }
-    } catch (error) {
-      // Units table might not exist yet, fall back to members
-    }
-    
-    // Fallback: get units from members table
-    const members = await ctx.db.query("members").collect();
-    const units = [...new Set(members.map(member => member.unit).filter(Boolean))];
-    
-    return units.sort();
+    // Delete the document record
+    await ctx.db.delete(args.id);
+
+    return args.id;
   },
 });

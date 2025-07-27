@@ -1,225 +1,367 @@
 import { v } from "convex/values";
-import { query, mutation, QueryCtx, MutationCtx } from "./_generated/server";
-import { getAuthUserId } from "@convex-dev/auth/server";
-import { internal } from "./_generated/api";
+import { query, mutation, internalMutation } from "./_generated/server";
+import { getClerkUserId, requireClerkAuth } from "./clerkHelpers";
+import { Id } from "./_generated/dataModel";
+import { internal, api } from "./_generated/api";
 
-async function requireAuth(ctx: QueryCtx | MutationCtx) {
-  const userId = await getAuthUserId(ctx);
-  if (!userId) {
-    throw new Error("Authentication required");
-  }
-  return userId;
-}
-
-async function getCurrentMemberInternal(ctx: QueryCtx | MutationCtx) {
-  const userId = await requireAuth(ctx);
-  const user = await ctx.db.get(userId);
-  if (!user) {
-    throw new Error("User not found");
-  }
-
-  const member = await ctx.db
-    .query("members")
-    .withIndex("by_email", (q) => q.eq("email", user.email || ""))
-    .unique();
-  
-  if (!member) {
-    throw new Error("Member not found");
-  }
-
-  return { userId, user, member };
-}
-
-async function requireAdmin(ctx: QueryCtx | MutationCtx) {
-  const { userId, user, member } = await getCurrentMemberInternal(ctx);
-  
-  if (member.role !== "admin") {
-    throw new Error("Admin access required");
-  }
-  
-  return { userId, user, member };
-}
-
+// Get current member for a specific association
 export const getCurrentMember = query({
-  args: {},
-  handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
+  args: { associationId: v.id("associations") },
+  handler: async (ctx, args) => {
+    const userId = await getClerkUserId(ctx);
     if (!userId) {
       return null;
     }
-    
-    const user = await ctx.db.get(userId);
-    if (!user) {
+
+    // Check if user is a member of this association
+    const associationMembership = await ctx.db
+      .query("associationMembers")
+      .withIndex("by_association_and_user", (q) => 
+        q.eq("associationId", args.associationId).eq("userId", userId)
+      )
+      .filter((q) => q.eq(q.field("status"), "active"))
+      .first();
+
+    if (!associationMembership) {
       return null;
     }
 
+    // Get user identity from Clerk
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity || !identity.email) {
+      return null;
+    }
+
+    // Find the member record for this association
     const member = await ctx.db
       .query("members")
-      .withIndex("by_email", (q) => q.eq("email", user.email || ""))
-      .unique();
-    
+      .withIndex("by_association_and_email", (q) => 
+        q.eq("associationId", args.associationId).eq("email", identity.email || "")
+      )
+      .first();
+
     return member;
   },
 });
 
-export const listMembers = query({
-  args: {},
-  handler: async (ctx) => {
-    await requireAdmin(ctx);
-    return await ctx.db.query("members").order("asc").collect();
+// Bootstrap member record when user first accesses an association
+export const bootstrap = mutation({
+  args: { associationId: v.id("associations") },
+  handler: async (ctx, args) => {
+    const userId = await getClerkUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+
+    // Check if user is a member of this association
+    const associationMembership = await ctx.db
+      .query("associationMembers")
+      .withIndex("by_association_and_user", (q) => 
+        q.eq("associationId", args.associationId).eq("userId", userId)
+      )
+      .filter((q) => q.eq(q.field("status"), "active"))
+      .first();
+
+    if (!associationMembership) {
+      return null;
+    }
+
+    // Get user identity from Clerk
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity || !identity.email) {
+      return null;
+    }
+
+    // Check if member record already exists
+    const existingMember = await ctx.db
+      .query("members")
+      .withIndex("by_association_and_email", (q) => 
+        q.eq("associationId", args.associationId).eq("email", identity.email || "")
+      )
+      .first();
+
+    if (existingMember) {
+      return existingMember._id;
+    }
+
+    // Create member record
+    const memberId = await ctx.db.insert("members", {
+      associationId: args.associationId,
+      email: identity.email || "",
+      name: identity.name || identity.email || "User",
+      role: associationMembership.role === "owner" ? "admin" : "member",
+      status: "active",
+      joinedAt: Date.now(),
+    });
+
+    return memberId;
   },
 });
 
-export const inviteMember = mutation({
+// List all members for an association
+export const list = query({
+  args: { associationId: v.id("associations") },
+  handler: async (ctx, args) => {
+    const userId = await getClerkUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+
+    // Check if user is a member of this association
+    const associationMembership = await ctx.db
+      .query("associationMembers")
+      .withIndex("by_association_and_user", (q) => 
+        q.eq("associationId", args.associationId).eq("userId", userId)
+      )
+      .filter((q) => q.eq(q.field("status"), "active"))
+      .first();
+
+    if (!associationMembership) {
+      throw new Error("Not authorized");
+    }
+
+    return await ctx.db
+      .query("members")
+      .withIndex("by_association", (q) => q.eq("associationId", args.associationId))
+      .collect();
+  },
+});
+
+// Create new member
+export const create = mutation({
   args: {
+    associationId: v.id("associations"),
     email: v.string(),
     name: v.string(),
     unit: v.optional(v.string()),
+    role: v.union(v.literal("admin"), v.literal("member")),
   },
   handler: async (ctx, args) => {
-    const { userId, member: currentMember } = await requireAdmin(ctx);
-    
+    const userId = await getClerkUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+
+    // Check if user is admin of this association
+    const associationMembership = await ctx.db
+      .query("associationMembers")
+      .withIndex("by_association_and_user", (q) => 
+        q.eq("associationId", args.associationId).eq("userId", userId)
+      )
+      .filter((q) => q.eq(q.field("status"), "active"))
+      .first();
+
+    if (!associationMembership || (associationMembership.role !== "owner" && associationMembership.role !== "admin")) {
+      throw new Error("Not authorized");
+    }
+
     // Check if member already exists
     const existingMember = await ctx.db
       .query("members")
-      .withIndex("by_email", (q) => q.eq("email", args.email))
-      .unique();
-    
+      .withIndex("by_association_and_email", (q) => 
+        q.eq("associationId", args.associationId).eq("email", args.email)
+      )
+      .first();
+
     if (existingMember) {
-      throw new Error("A member with this email already exists");
+      throw new Error("Member with this email already exists");
     }
 
-    // Create the member
     const memberId = await ctx.db.insert("members", {
-      email: args.email,
-      name: args.name,
-      unit: args.unit,
-      role: "member",
+      ...args,
       status: "invited",
       invitedBy: userId,
       invitedAt: Date.now(),
     });
 
-    // Log audit event
-    await ctx.runMutation(internal.audit.logAuditEvent, {
-      userId,
-      memberId: currentMember._id,
-      action: "member_invited",
-      entityType: "member",
-      entityId: memberId,
-      description: `Invited ${args.name} (${args.email})${args.unit ? ` to unit ${args.unit}` : ""}`,
-      metadata: {
-        invitedEmail: args.email,
-        invitedName: args.name,
-        assignedUnit: args.unit,
-      },
-    });
+    // Log the audit event
+    try {
+      await ctx.runMutation(api.audit.log, {
+        associationId: args.associationId,
+        userId,
+        memberId,
+        action: "member_invited",
+        entityType: "member",
+        entityId: memberId,
+        description: `Invited ${args.name} (${args.email}) to join the association`,
+        metadata: { email: args.email, name: args.name, unit: args.unit, role: args.role },
+      });
+    } catch (error) {
+      console.error("Failed to log audit event:", error);
+    }
 
-    return await ctx.db.get(memberId);
+    // Get the inviter's information from Clerk identity
+    const identity = await ctx.auth.getUserIdentity();
+    const inviterName = identity?.name || identity?.email || "Administrator";
+
+    // Send invitation email
+    try {
+      await ctx.scheduler.runAfter(0, internal.emails.sendInvitationEmail, {
+        email: args.email,
+        name: args.name,
+        inviterName,
+        unit: args.unit,
+      });
+    } catch (error) {
+      console.error("Failed to schedule invitation email:", error);
+      // Don't throw error to avoid breaking the member creation process
+    }
+
+    return memberId;
   },
 });
 
-export const updateMemberRole = mutation({
+// Update member
+export const update = mutation({
   args: {
-    memberId: v.id("members"),
-    role: v.union(v.literal("admin"), v.literal("member")),
+    id: v.id("members"),
+    name: v.optional(v.string()),
+    unit: v.optional(v.string()),
+    role: v.optional(v.union(v.literal("admin"), v.literal("member"))),
   },
   handler: async (ctx, args) => {
-    const { userId, member: currentMember } = await requireAdmin(ctx);
-    
-    const member = await ctx.db.get(args.memberId);
+    const userId = await getClerkUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+
+    const member = await ctx.db.get(args.id);
     if (!member) {
       throw new Error("Member not found");
     }
 
-    const oldRole = member.role;
-    
-    await ctx.db.patch(args.memberId, {
-      role: args.role,
-    });
+    // Check if user is admin of this association
+    const associationMembership = await ctx.db
+      .query("associationMembers")
+      .withIndex("by_association_and_user", (q) => 
+        q.eq("associationId", member.associationId).eq("userId", userId)
+      )
+      .filter((q) => q.eq(q.field("status"), "active"))
+      .first();
 
-    // Log audit event
-    await ctx.runMutation(internal.audit.logAuditEvent, {
-      userId,
-      memberId: currentMember._id,
-      action: "member_role_updated",
-      entityType: "member",
-      entityId: args.memberId,
-      description: `Changed ${member.name}'s role from ${oldRole} to ${args.role}`,
-      metadata: {
-        targetMember: member.name,
-        targetEmail: member.email,
-        oldRole,
-        newRole: args.role,
-      },
-    });
+    if (!associationMembership || (associationMembership.role !== "owner" && associationMembership.role !== "admin")) {
+      throw new Error("Not authorized");
+    }
+
+    const { id, ...updates } = args;
+    await ctx.db.patch(id, updates);
+    return id;
   },
 });
 
-export const updateMemberStatus = mutation({
+// Deactivate member
+export const deactivate = mutation({
   args: {
-    memberId: v.id("members"),
-    status: v.union(v.literal("active"), v.literal("inactive")),
+    id: v.id("members"),
+    reason: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    const { userId, member: currentMember } = await requireAdmin(ctx);
-    
-    const member = await ctx.db.get(args.memberId);
+    const userId = await getClerkUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+
+    const member = await ctx.db.get(args.id);
     if (!member) {
       throw new Error("Member not found");
     }
 
-    const oldStatus = member.status;
-    
-    await ctx.db.patch(args.memberId, {
-      status: args.status,
+    // Check if user is admin of this association
+    const associationMembership = await ctx.db
+      .query("associationMembers")
+      .withIndex("by_association_and_user", (q) => 
+        q.eq("associationId", member.associationId).eq("userId", userId)
+      )
+      .filter((q) => q.eq(q.field("status"), "active"))
+      .first();
+
+    if (!associationMembership || (associationMembership.role !== "owner" && associationMembership.role !== "admin")) {
+      throw new Error("Not authorized");
+    }
+
+    await ctx.db.patch(args.id, {
+      status: "inactive",
+      deactivatedAt: Date.now(),
+      deactivatedBy: userId,
+      deactivationReason: args.reason,
     });
 
-    // Log audit event
-    await ctx.runMutation(internal.audit.logAuditEvent, {
-      userId,
-      memberId: currentMember._id,
-      action: "member_status_updated",
-      entityType: "member",
-      entityId: args.memberId,
-      description: `Changed ${member.name}'s status from ${oldStatus} to ${args.status}`,
-      metadata: {
-        targetMember: member.name,
-        targetEmail: member.email,
-        oldStatus,
-        newStatus: args.status,
-      },
-    });
+    return args.id;
   },
 });
 
-export const bootstrap = mutation({
-  args: {},
-  handler: async (ctx) => {
-    const userId = await getAuthUserId(ctx);
-    if (!userId) throw new Error("Authentication required");
-    
-    const user = await ctx.db.get(userId);
-    if (!user) throw new Error("User not found");
+// Reactivate member
+export const reactivate = mutation({
+  args: {
+    id: v.id("members"),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getClerkUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
 
-    const existingMember = await ctx.db
-      .query("members")
-      .withIndex("by_email", (q) => q.eq("email", user.email || ""))
-      .unique();
-    
-    if (existingMember) return existingMember;
+    const member = await ctx.db.get(args.id);
+    if (!member) {
+      throw new Error("Member not found");
+    }
 
-    const memberCount = await ctx.db.query("members").collect();
-    const isFirstUser = memberCount.length === 0;
+    // Check if user is admin of this association
+    const associationMembership = await ctx.db
+      .query("associationMembers")
+      .withIndex("by_association_and_user", (q) => 
+        q.eq("associationId", member.associationId).eq("userId", userId)
+      )
+      .filter((q) => q.eq(q.field("status"), "active"))
+      .first();
 
-    const memberId = await ctx.db.insert("members", {
-      email: user.email || "",
-      name: user.name || "Unknown User",
-      role: isFirstUser ? "admin" : "member",
-      status: isFirstUser ? "active" : "invited",
-      joinedAt: Date.now(),
+    if (!associationMembership || (associationMembership.role !== "owner" && associationMembership.role !== "admin")) {
+      throw new Error("Not authorized");
+    }
+
+    await ctx.db.patch(args.id, {
+      status: "active",
+      reactivatedAt: Date.now(),
+      reactivatedBy: userId,
+      deactivatedAt: undefined,
+      deactivatedBy: undefined,
+      deactivationReason: undefined,
     });
 
-    return await ctx.db.get(memberId);
+    return args.id;
+  },
+});
+
+// Delete member
+export const remove = mutation({
+  args: {
+    id: v.id("members"),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getClerkUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+
+    const member = await ctx.db.get(args.id);
+    if (!member) {
+      throw new Error("Member not found");
+    }
+
+    // Check if user is admin of this association
+    const associationMembership = await ctx.db
+      .query("associationMembers")
+      .withIndex("by_association_and_user", (q) => 
+        q.eq("associationId", member.associationId).eq("userId", userId)
+      )
+      .filter((q) => q.eq(q.field("status"), "active"))
+      .first();
+
+    if (!associationMembership || (associationMembership.role !== "owner" && associationMembership.role !== "admin")) {
+      throw new Error("Not authorized");
+    }
+
+    await ctx.db.delete(args.id);
+    return args.id;
   },
 });

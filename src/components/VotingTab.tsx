@@ -1,504 +1,425 @@
 import { useState } from "react";
 import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
-import { Doc } from "../../convex/_generated/dataModel";
+import { Id } from "../../convex/_generated/dataModel";
 import { toast } from "sonner";
 
 interface VotingTabProps {
-  member: Doc<"members">;
+  associationId: Id<"associations">;
 }
 
-export function VotingTab({ member }: VotingTabProps) {
-  const votingTopics = useQuery(api.voting.listVotingTopics, {});
-  const availableUnits = useQuery(api.documents.getAvailableUnits, {});
-  const createVotingTopic = useMutation(api.voting.createVotingTopic);
-  const activateVotingTopic = useMutation(api.voting.activateVotingTopic);
-  const closeVotingTopic = useMutation(api.voting.closeVotingTopic);
-  const castVote = useMutation(api.voting.castVote);
-
+export function VotingTab({ associationId }: VotingTabProps) {
+  const topics = useQuery(api.voting.listTopics, { associationId });
+  const createTopic = useMutation(api.voting.createTopic);
+  const updateTopic = useMutation(api.voting.updateTopic);
+  const vote = useMutation(api.voting.vote);
+  const getUserVote = useQuery(api.voting.getUserVote, 
+    topics && topics.length > 0 ? { topicId: topics[0]._id } : "skip"
+  );
+  
   const [showCreateForm, setShowCreateForm] = useState(false);
-  const [createForm, setCreateForm] = useState({
+  const [selectedTopic, setSelectedTopic] = useState<string | null>(null);
+  const [topicForm, setTopicForm] = useState({
     title: "",
     description: "",
     options: ["", ""],
     startDate: "",
     endDate: "",
     allowMultipleVotes: false,
-    visibilityType: "all" as "all" | "units" | "admin",
-    visibleToUnits: [] as string[],
   });
-
-  const [selectedVotes, setSelectedVotes] = useState<Record<string, string[]>>({});
 
   const handleCreateTopic = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      const startDate = new Date(createForm.startDate).getTime();
-      const endDate = new Date(createForm.endDate).getTime();
+      const startDate = new Date(topicForm.startDate).getTime();
+      const endDate = new Date(topicForm.endDate).getTime();
       
       if (endDate <= startDate) {
         toast.error("End date must be after start date");
         return;
       }
 
-      const validOptions = createForm.options.filter(option => option.trim());
+      const validOptions = topicForm.options.filter(option => option.trim() !== "");
       if (validOptions.length < 2) {
         toast.error("At least 2 options are required");
         return;
       }
 
-      await createVotingTopic({
-        title: createForm.title,
-        description: createForm.description,
+      await createTopic({
+        associationId,
+        title: topicForm.title,
+        description: topicForm.description,
         options: validOptions,
         startDate,
         endDate,
-        allowMultipleVotes: createForm.allowMultipleVotes,
-        visibilityType: createForm.visibilityType,
-        visibleToUnits: createForm.visibilityType === "units" ? createForm.visibleToUnits : undefined,
+        allowMultipleVotes: topicForm.allowMultipleVotes,
       });
-
+      
       toast.success("Voting topic created successfully");
-      setCreateForm({
+      setTopicForm({
         title: "",
         description: "",
         options: ["", ""],
         startDate: "",
         endDate: "",
         allowMultipleVotes: false,
-        visibilityType: "all",
-        visibleToUnits: [],
       });
       setShowCreateForm(false);
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to create voting topic");
+      toast.error("Failed to create topic: " + (error as Error).message);
     }
   };
 
-  const handleActivate = async (topicId: string) => {
+  const handleVote = async (topicId: Id<"votingTopics">, selectedOptions: string[]) => {
     try {
-      await activateVotingTopic({ topicId: topicId as any });
+      await vote({ topicId, selectedOptions });
+      toast.success("Vote submitted successfully");
+    } catch (error) {
+      toast.error("Failed to submit vote: " + (error as Error).message);
+    }
+  };
+
+  const handleActivateTopic = async (topicId: Id<"votingTopics">) => {
+    try {
+      await updateTopic({ id: topicId, status: "active" });
       toast.success("Voting topic activated");
     } catch (error) {
-      toast.error("Failed to activate voting topic");
+      toast.error("Failed to activate topic: " + (error as Error).message);
     }
-  };
-
-  const handleClose = async (topicId: string) => {
-    try {
-      await closeVotingTopic({ topicId: topicId as any });
-      toast.success("Voting topic closed");
-    } catch (error) {
-      toast.error("Failed to close voting topic");
-    }
-  };
-
-  const handleVote = async (topicId: string) => {
-    const selectedOptions = selectedVotes[topicId] || [];
-    if (selectedOptions.length === 0) {
-      toast.error("Please select at least one option");
-      return;
-    }
-
-    try {
-      await castVote({ topicId: topicId as any, selectedOptions });
-      toast.success("Vote cast successfully");
-      setSelectedVotes(prev => ({ ...prev, [topicId]: [] }));
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to cast vote");
-    }
-  };
-
-  const handleOptionChange = (topicId: string, option: string, checked: boolean, allowMultiple: boolean) => {
-    setSelectedVotes(prev => {
-      const current = prev[topicId] || [];
-      if (allowMultiple) {
-        return {
-          ...prev,
-          [topicId]: checked
-            ? [...current, option]
-            : current.filter(o => o !== option)
-        };
-      } else {
-        return {
-          ...prev,
-          [topicId]: checked ? [option] : []
-        };
-      }
-    });
   };
 
   const addOption = () => {
-    setCreateForm(prev => ({
-      ...prev,
-      options: [...prev.options, ""]
-    }));
+    setTopicForm({
+      ...topicForm,
+      options: [...topicForm.options, ""]
+    });
   };
 
   const removeOption = (index: number) => {
-    setCreateForm(prev => ({
-      ...prev,
-      options: prev.options.filter((_, i) => i !== index)
-    }));
+    if (topicForm.options.length > 2) {
+      const newOptions = topicForm.options.filter((_, i) => i !== index);
+      setTopicForm({ ...topicForm, options: newOptions });
+    }
   };
 
   const updateOption = (index: number, value: string) => {
-    setCreateForm(prev => ({
-      ...prev,
-      options: prev.options.map((option, i) => i === index ? value : option)
-    }));
+    const newOptions = [...topicForm.options];
+    newOptions[index] = value;
+    setTopicForm({ ...topicForm, options: newOptions });
   };
 
-  const handleUnitToggle = (unit: string) => {
-    setCreateForm(prev => ({
-      ...prev,
-      visibleToUnits: prev.visibleToUnits.includes(unit)
-        ? prev.visibleToUnits.filter(u => u !== unit)
-        : [...prev.visibleToUnits, unit]
-    }));
-  };
+  if (!topics) {
+    return (
+      <div className="bg-white rounded-lg shadow-sm p-6">
+        <div className="animate-pulse">
+          <div className="h-8 bg-slate-200 rounded w-1/4 mb-4"></div>
+          <div className="space-y-3">
+            <div className="h-4 bg-slate-200 rounded"></div>
+            <div className="h-4 bg-slate-200 rounded w-5/6"></div>
+            <div className="h-4 bg-slate-200 rounded w-4/6"></div>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex justify-between items-center">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900">Voting</h2>
-          <p className="text-slate-600">
-            {member.role === "admin" 
-              ? "Manage voting topics and view results" 
-              : `Vote on topics available to ${member.unit ? `unit ${member.unit} and ` : ""}all members`}
-          </p>
-        </div>
-        {member.role === "admin" && (
-          <button
-            onClick={() => setShowCreateForm(true)}
-            className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-          >
-            <span className="mr-2">🗳️</span>
-            Create Voting Topic
-          </button>
-        )}
+    <div className="bg-white rounded-lg shadow-sm p-6">
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-2xl font-bold text-slate-900">Voting</h2>
+        <button
+          onClick={() => setShowCreateForm(true)}
+          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+        >
+          Create Vote
+        </button>
       </div>
 
-      {/* Create Form Modal */}
       {showCreateForm && (
-        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
-          <div className="bg-white rounded-lg shadow-xl max-w-2xl w-full p-6 max-h-[90vh] overflow-y-auto">
-            <h3 className="text-lg font-medium text-slate-900 mb-4">Create Voting Topic</h3>
-            <form onSubmit={handleCreateTopic} className="space-y-4">
+        <div className="mb-6 p-4 border border-slate-200 rounded-lg bg-slate-50">
+          <h3 className="text-lg font-semibold mb-4">Create New Vote</h3>
+          <form onSubmit={handleCreateTopic} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Title *
+              </label>
+              <input
+                type="text"
+                required
+                value={topicForm.title}
+                onChange={(e) => setTopicForm({ ...topicForm, title: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                placeholder="e.g., Pool Renovation Proposal"
+              />
+            </div>
+            
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-1">
+                Description
+              </label>
+              <textarea
+                value={topicForm.description}
+                onChange={(e) => setTopicForm({ ...topicForm, description: e.target.value })}
+                className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                rows={3}
+                placeholder="Provide details about what members are voting on..."
+              />
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-slate-700 mb-2">
+                Voting Options *
+              </label>
+              {topicForm.options.map((option, index) => (
+                <div key={index} className="flex items-center space-x-2 mb-2">
+                  <input
+                    type="text"
+                    value={option}
+                    onChange={(e) => updateOption(index, e.target.value)}
+                    className="flex-1 px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    placeholder={`Option ${index + 1}`}
+                  />
+                  {topicForm.options.length > 2 && (
+                    <button
+                      type="button"
+                      onClick={() => removeOption(index)}
+                      className="px-2 py-2 text-red-600 hover:text-red-800"
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
+              ))}
+              <button
+                type="button"
+                onClick={addOption}
+                className="text-sm text-blue-600 hover:text-blue-800"
+              >
+                + Add Option
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Title *
+                  Start Date *
                 </label>
                 <input
-                  type="text"
+                  type="datetime-local"
                   required
-                  value={createForm.title}
-                  onChange={(e) => setCreateForm({ ...createForm, title: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
+                  value={topicForm.startDate}
+                  onChange={(e) => setTopicForm({ ...topicForm, startDate: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Description *
+                  End Date *
                 </label>
-                <textarea
-                  required
-                  value={createForm.description}
-                  onChange={(e) => setCreateForm({ ...createForm, description: e.target.value })}
-                  rows={3}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">
-                  Voting Options *
-                </label>
-                {createForm.options.map((option, index) => (
-                  <div key={index} className="flex items-center space-x-2 mb-2">
-                    <input
-                      type="text"
-                      value={option}
-                      onChange={(e) => updateOption(index, e.target.value)}
-                      placeholder={`Option ${index + 1}`}
-                      className="flex-1 px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                    />
-                    {createForm.options.length > 2 && (
-                      <button
-                        type="button"
-                        onClick={() => removeOption(index)}
-                        className="px-2 py-2 text-red-600 hover:text-red-800"
-                      >
-                        ✕
-                      </button>
-                    )}
-                  </div>
-                ))}
-                <button
-                  type="button"
-                  onClick={addOption}
-                  className="text-sm text-blue-600 hover:text-blue-800"
-                >
-                  + Add Option
-                </button>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-slate-700 mb-2">
-                  Visibility *
-                </label>
-                <div className="space-y-2">
-                  <label className="flex items-center">
-                    <input
-                      type="radio"
-                      name="visibilityType"
-                      value="all"
-                      checked={createForm.visibilityType === "all"}
-                      onChange={(e) => setCreateForm({ ...createForm, visibilityType: e.target.value as any })}
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-slate-300"
-                    />
-                    <span className="ml-2 text-sm text-slate-700">All members</span>
-                  </label>
-                  <label className="flex items-center">
-                    <input
-                      type="radio"
-                      name="visibilityType"
-                      value="units"
-                      checked={createForm.visibilityType === "units"}
-                      onChange={(e) => setCreateForm({ ...createForm, visibilityType: e.target.value as any })}
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-slate-300"
-                    />
-                    <span className="ml-2 text-sm text-slate-700">Specific units only</span>
-                  </label>
-                  <label className="flex items-center">
-                    <input
-                      type="radio"
-                      name="visibilityType"
-                      value="admin"
-                      checked={createForm.visibilityType === "admin"}
-                      onChange={(e) => setCreateForm({ ...createForm, visibilityType: e.target.value as any })}
-                      className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-slate-300"
-                    />
-                    <span className="ml-2 text-sm text-slate-700">Administrators only</span>
-                  </label>
-                </div>
-              </div>
-              {createForm.visibilityType === "units" && (
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-2">
-                    Select Units *
-                  </label>
-                  <div className="max-h-32 overflow-y-auto border border-slate-300 rounded-md p-2 space-y-1">
-                    {availableUnits?.filter(unit => unit).map((unit) => (
-                      <label key={unit} className="flex items-center">
-                        <input
-                          type="checkbox"
-                          checked={createForm.visibleToUnits.includes(unit!)}
-                          onChange={() => handleUnitToggle(unit!)}
-                          className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-slate-300 rounded"
-                        />
-                        <span className="ml-2 text-sm text-slate-700">{unit}</span>
-                      </label>
-                    ))}
-                  </div>
-                </div>
-              )}
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    Start Date *
-                  </label>
-                  <input
-                    type="datetime-local"
-                    required
-                    value={createForm.startDate}
-                    onChange={(e) => setCreateForm({ ...createForm, startDate: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-slate-700 mb-1">
-                    End Date *
-                  </label>
-                  <input
-                    type="datetime-local"
-                    required
-                    value={createForm.endDate}
-                    onChange={(e) => setCreateForm({ ...createForm, endDate: e.target.value })}
-                    className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500"
-                  />
-                </div>
-              </div>
-              <div className="flex items-center">
                 <input
-                  type="checkbox"
-                  id="allowMultiple"
-                  checked={createForm.allowMultipleVotes}
-                  onChange={(e) => setCreateForm({ ...createForm, allowMultipleVotes: e.target.checked })}
-                  className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-slate-300 rounded"
+                  type="datetime-local"
+                  required
+                  value={topicForm.endDate}
+                  onChange={(e) => setTopicForm({ ...topicForm, endDate: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
-                <label htmlFor="allowMultiple" className="ml-2 block text-sm text-slate-700">
-                  Allow multiple vote selections
-                </label>
               </div>
-              <div className="flex justify-end space-x-3 pt-4">
-                <button
-                  type="button"
-                  onClick={() => setShowCreateForm(false)}
-                  className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={createForm.visibilityType === "units" && createForm.visibleToUnits.length === 0}
-                  className="px-4 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
-                >
-                  Create Topic
-                </button>
-              </div>
-            </form>
-          </div>
+            </div>
+
+            <div className="flex items-center">
+              <input
+                type="checkbox"
+                id="allowMultiple"
+                checked={topicForm.allowMultipleVotes}
+                onChange={(e) => setTopicForm({ ...topicForm, allowMultipleVotes: e.target.checked })}
+                className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-slate-300 rounded"
+              />
+              <label htmlFor="allowMultiple" className="ml-2 text-sm text-slate-700">
+                Allow multiple selections
+              </label>
+            </div>
+
+            <div className="flex space-x-3">
+              <button
+                type="submit"
+                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              >
+                Create Vote
+              </button>
+              <button
+                type="button"
+                onClick={() => setShowCreateForm(false)}
+                className="px-4 py-2 bg-slate-300 text-slate-700 rounded-md hover:bg-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-500"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
         </div>
       )}
 
-      {/* Voting Topics */}
-      <div className="space-y-4">
-        {votingTopics?.length === 0 ? (
-          <div className="text-center py-12 bg-white rounded-lg border border-slate-200">
-            <div className="text-slate-400 text-6xl mb-4">🗳️</div>
-            <h3 className="text-lg font-medium text-slate-900 mb-2">No voting topics</h3>
-            <p className="text-slate-600">
-              {member.role === "admin"
-                ? "Create your first voting topic to get started."
-                : "No voting topics are currently available to you."}
-            </p>
-          </div>
-        ) : (
-          votingTopics?.map((topic) => (
-            <div key={topic._id} className="bg-white rounded-lg border border-slate-200 p-6">
-              <div className="flex justify-between items-start mb-4">
-                <div className="flex-1">
-                  <h3 className="text-lg font-medium text-slate-900 mb-2">{topic.title}</h3>
-                  <p className="text-slate-600 mb-3">{topic.description}</p>
-                  <div className="flex items-center space-x-4 text-sm text-slate-500">
-                    <span
-                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                        topic.status === "active"
-                          ? "bg-green-100 text-green-800"
-                          : topic.status === "draft"
-                          ? "bg-yellow-100 text-yellow-800"
-                          : "bg-gray-100 text-gray-800"
-                      }`}
-                    >
-                      {topic.status}
-                    </span>
-                    <span>
-                      {new Date(topic.startDate).toLocaleDateString()} - {new Date(topic.endDate).toLocaleDateString()}
-                    </span>
-                    {topic.allowMultipleVotes && (
-                      <span className="text-blue-600">Multiple selections allowed</span>
-                    )}
-                    {topic.visibilityType === "units" && topic.visibleToUnits && (
-                      <span className="text-blue-600">
-                        Units: {topic.visibleToUnits.join(", ")}
-                      </span>
-                    )}
-                    {topic.visibilityType === "admin" && (
-                      <span className="text-red-600">Admin only</span>
-                    )}
-                  </div>
-                </div>
-                {member.role === "admin" && (
-                  <div className="flex space-x-2">
-                    {topic.status === "draft" && (
-                      <button
-                        onClick={() => handleActivate(topic._id)}
-                        className="px-3 py-1 text-sm font-medium text-green-700 bg-green-100 rounded-md hover:bg-green-200"
-                      >
-                        Activate
-                      </button>
-                    )}
-                    {topic.status === "active" && (
-                      <button
-                        onClick={() => handleClose(topic._id)}
-                        className="px-3 py-1 text-sm font-medium text-red-700 bg-red-100 rounded-md hover:bg-red-200"
-                      >
-                        Close
-                      </button>
-                    )}
-                  </div>
-                )}
-              </div>
-
-              {/* Voting Options */}
-              {topic.status === "active" && member.status === "active" && (
-                <div className="space-y-3">
-                  <h4 className="font-medium text-slate-900">Cast your vote:</h4>
-                  {topic.options.map((option) => (
-                    <label key={option} className="flex items-center space-x-3">
-                      <input
-                        type={topic.allowMultipleVotes ? "checkbox" : "radio"}
-                        name={`vote-${topic._id}`}
-                        checked={(selectedVotes[topic._id] || []).includes(option)}
-                        onChange={(e) => handleOptionChange(topic._id, option, e.target.checked, topic.allowMultipleVotes)}
-                        className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-slate-300"
-                      />
-                      <span className="text-slate-700">{option}</span>
-                    </label>
-                  ))}
-                  <button
-                    onClick={() => handleVote(topic._id)}
-                    disabled={!selectedVotes[topic._id]?.length}
-                    className="mt-4 px-4 py-2 text-sm font-medium text-white bg-blue-600 rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    Submit Vote
-                  </button>
-                </div>
-              )}
-
-              {topic.status === "closed" && (
-                <div className="mt-4 p-4 bg-slate-50 rounded-md">
-                  <h4 className="font-medium text-slate-900 mb-2">Voting Results:</h4>
-                  <VotingResults topicId={topic._id} />
-                </div>
-              )}
-            </div>
-          ))
-        )}
+      <div className="space-y-6">
+        {topics.map((topic) => (
+          <VotingTopicCard
+            key={topic._id}
+            topic={topic}
+            onVote={handleVote}
+            onActivate={handleActivateTopic}
+          />
+        ))}
       </div>
+      
+      {topics.length === 0 && (
+        <div className="text-center py-8">
+          <div className="text-slate-400 text-4xl mb-4">🗳️</div>
+          <h3 className="text-lg font-medium text-slate-900 mb-2">No votes yet</h3>
+          <p className="text-slate-600">Create your first voting topic to get started.</p>
+        </div>
+      )}
     </div>
   );
 }
 
-function VotingResults({ topicId }: { topicId: string }) {
-  const results = useQuery(api.voting.getVotingResults, { topicId: topicId as any });
+function VotingTopicCard({ topic, onVote, onActivate }: {
+  topic: any;
+  onVote: (topicId: Id<"votingTopics">, selectedOptions: string[]) => void;
+  onActivate: (topicId: Id<"votingTopics">) => void;
+}) {
+  const [selectedOptions, setSelectedOptions] = useState<string[]>([]);
+  const userVote = useQuery(api.voting.getUserVote, { topicId: topic._id });
 
-  if (!results) {
-    return <div className="text-slate-500">Loading results...</div>;
-  }
+  const now = Date.now();
+  const isActive = topic.status === "active" && now >= topic.startDate && now <= topic.endDate;
+  const hasEnded = now > topic.endDate;
+  const hasStarted = now >= topic.startDate;
 
-  const maxVotes = Math.max(...Object.values(results.results));
+  const handleOptionChange = (option: string, checked: boolean) => {
+    if (topic.allowMultipleVotes) {
+      if (checked) {
+        setSelectedOptions([...selectedOptions, option]);
+      } else {
+        setSelectedOptions(selectedOptions.filter(o => o !== option));
+      }
+    } else {
+      setSelectedOptions(checked ? [option] : []);
+    }
+  };
+
+  const handleSubmitVote = () => {
+    if (selectedOptions.length === 0) {
+      toast.error("Please select at least one option");
+      return;
+    }
+    onVote(topic._id, selectedOptions);
+    setSelectedOptions([]);
+  };
 
   return (
-    <div className="space-y-2">
-      {Object.entries(results.results).map(([option, votes]) => (
-        <div key={option} className="flex items-center justify-between">
-          <span className="text-slate-700">{option}</span>
-          <div className="flex items-center space-x-2">
-            <div className="w-24 bg-slate-200 rounded-full h-2">
-              <div
-                className="bg-blue-600 h-2 rounded-full"
-                style={{ width: `${maxVotes > 0 ? (votes / maxVotes) * 100 : 0}%` }}
-              />
-            </div>
-            <span className="text-sm text-slate-600 w-8 text-right">{votes}</span>
+    <div className="border border-slate-200 rounded-lg p-6">
+      <div className="flex items-start justify-between mb-4">
+        <div className="flex-1">
+          <h3 className="text-xl font-semibold text-slate-900 mb-2">{topic.title}</h3>
+          {topic.description && (
+            <p className="text-slate-600 mb-3">{topic.description}</p>
+          )}
+          <div className="flex items-center space-x-4 text-sm text-slate-500">
+            <span>
+              {new Date(topic.startDate).toLocaleDateString()} - {new Date(topic.endDate).toLocaleDateString()}
+            </span>
+            <span>{topic.totalVotes} votes</span>
           </div>
         </div>
-      ))}
-      <div className="text-sm text-slate-500 mt-2">
-        Total votes: {results.totalVotes}
+        <div className="flex flex-col items-end space-y-2">
+          <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+            topic.status === "active" 
+              ? "bg-green-100 text-green-800" 
+              : topic.status === "draft"
+              ? "bg-yellow-100 text-yellow-800"
+              : "bg-slate-100 text-slate-800"
+          }`}>
+            {topic.status}
+          </span>
+          {topic.status === "draft" && (
+            <button
+              onClick={() => onActivate(topic._id)}
+              className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+            >
+              Activate
+            </button>
+          )}
+        </div>
       </div>
+
+      <div className="space-y-3">
+        {topic.options.map((option: string) => {
+          const voteCount = topic.voteCounts[option] || 0;
+          const percentage = topic.totalVotes > 0 ? (voteCount / topic.totalVotes) * 100 : 0;
+          const isSelected = userVote?.selectedOptions?.includes(option);
+          
+          return (
+            <div key={option} className="space-y-2">
+              <div className="flex items-center justify-between">
+                <label className="flex items-center space-x-3 cursor-pointer">
+                  <input
+                    type={topic.allowMultipleVotes ? "checkbox" : "radio"}
+                    name={`vote-${topic._id}`}
+                    checked={isActive ? selectedOptions.includes(option) : isSelected}
+                    onChange={(e) => isActive && handleOptionChange(option, e.target.checked)}
+                    disabled={!isActive}
+                    className="h-4 w-4 text-blue-600 focus:ring-blue-500 border-slate-300"
+                  />
+                  <span className="text-slate-900">{option}</span>
+                </label>
+                <span className="text-sm text-slate-600">
+                  {voteCount} votes ({percentage.toFixed(1)}%)
+                </span>
+              </div>
+              <div className="w-full bg-slate-200 rounded-full h-2">
+                <div
+                  className="bg-blue-600 h-2 rounded-full transition-all duration-300"
+                  style={{ width: `${percentage}%` }}
+                />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {isActive && !userVote && (
+        <div className="mt-4 pt-4 border-t border-slate-200">
+          <button
+            onClick={handleSubmitVote}
+            disabled={selectedOptions.length === 0}
+            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            Submit Vote
+          </button>
+        </div>
+      )}
+
+      {userVote && (
+        <div className="mt-4 pt-4 border-t border-slate-200">
+          <p className="text-sm text-green-600">
+            ✓ You voted for: {userVote.selectedOptions.join(", ")}
+          </p>
+        </div>
+      )}
+
+      {!isActive && !hasEnded && topic.status === "active" && (
+        <div className="mt-4 pt-4 border-t border-slate-200">
+          <p className="text-sm text-slate-600">
+            Voting starts on {new Date(topic.startDate).toLocaleDateString()}
+          </p>
+        </div>
+      )}
+
+      {hasEnded && (
+        <div className="mt-4 pt-4 border-t border-slate-200">
+          <p className="text-sm text-slate-600">
+            Voting ended on {new Date(topic.endDate).toLocaleDateString()}
+          </p>
+        </div>
+      )}
     </div>
   );
 }

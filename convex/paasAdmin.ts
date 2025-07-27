@@ -1,0 +1,363 @@
+import { v } from "convex/values";
+import { query, mutation, internalMutation, internalAction } from "./_generated/server";
+import { getClerkUserId, requireClerkAuth, requirePaasAdmin } from "./clerkHelpers";
+import { Id } from "./_generated/dataModel";
+import { internal } from "./_generated/api";
+
+// Helper function moved to clerkHelpers.ts
+
+// Check if current user is a PaaS admin
+export const isPaasAdmin = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getClerkUserId(ctx);
+    if (!userId) {
+      return false;
+    }
+
+    const paasAdmin = await ctx.db
+      .query("paasAdmins")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .filter((q) => q.eq(q.field("isActive"), true))
+      .first();
+
+    return !!paasAdmin;
+  },
+});
+
+// Get current PaaS admin details
+export const getCurrentPaasAdmin = query({
+  args: {},
+  handler: async (ctx) => {
+    const userId = await getClerkUserId(ctx);
+    if (!userId) {
+      return null;
+    }
+
+    const paasAdmin = await ctx.db
+      .query("paasAdmins")
+      .withIndex("by_user", (q) => q.eq("userId", userId))
+      .filter((q) => q.eq(q.field("isActive"), true))
+      .first();
+
+    if (!paasAdmin) {
+      return null;
+    }
+
+    const identity = await ctx.auth.getUserIdentity();
+    const user = {
+      _id: userId,
+      name: identity?.name,
+      email: identity?.email,
+      image: identity?.pictureUrl,
+    };
+    return { ...paasAdmin, user };
+  },
+});
+
+// List all associations (PaaS admin only)
+export const listAllAssociations = query({
+  args: {
+    status: v.optional(v.union(v.literal("active"), v.literal("inactive"), v.literal("trial"), v.literal("suspended"))),
+    tier: v.optional(v.union(v.literal("free"), v.literal("basic"), v.literal("premium"))),
+  },
+  handler: async (ctx, args) => {
+    await requirePaasAdmin(ctx);
+
+    let associations;
+
+    if (args.status) {
+      associations = await ctx.db
+        .query("associations")
+        .withIndex("by_subscription_status", (q) => q.eq("subscriptionStatus", args.status!))
+        .order("desc")
+        .collect();
+    } else if (args.tier) {
+      associations = await ctx.db
+        .query("associations")
+        .withIndex("by_subscription_tier", (q) => q.eq("subscriptionTier", args.tier!))
+        .order("desc")
+        .collect();
+    } else {
+      associations = await ctx.db.query("associations").order("desc").collect();
+    }
+
+    // Get member counts for each association
+    const associationsWithStats = await Promise.all(
+      associations.map(async (association) => {
+        const memberCount = await ctx.db
+          .query("associationMembers")
+          .withIndex("by_association", (q) => q.eq("associationId", association._id))
+          .filter((q) => q.eq(q.field("status"), "active"))
+          .collect()
+          .then(members => members.length);
+
+        const owner = await ctx.db
+          .query("associationMembers")
+          .withIndex("by_association", (q) => q.eq("associationId", association._id))
+          .filter((q) => q.eq(q.field("role"), "owner"))
+          .first();
+
+        let ownerUser = null;
+        if (owner) {
+          // Since we're using Clerk, we can't get user details from DB
+          // We'll need to get this from Clerk or store it differently
+          ownerUser = {
+            _id: owner.userId,
+            name: "User", // Placeholder - would need Clerk API call to get real name
+            email: "user@example.com" // Placeholder
+          };
+        }
+
+        return {
+          ...association,
+          memberCount,
+          owner: ownerUser,
+        };
+      })
+    );
+
+    return associationsWithStats;
+  },
+});
+
+// Create association as PaaS admin
+export const createAssociationAsAdmin = mutation({
+  args: {
+    name: v.string(),
+    description: v.optional(v.string()),
+    address: v.optional(v.string()),
+    city: v.optional(v.string()),
+    country: v.optional(v.string()),
+    postalCode: v.optional(v.string()),
+    contactEmail: v.optional(v.string()),
+    contactPhone: v.optional(v.string()),
+    website: v.optional(v.string()),
+    ownerEmail: v.string(),
+    subscriptionTier: v.union(v.literal("free"), v.literal("basic"), v.literal("premium")),
+    subscriptionStatus: v.union(v.literal("active"), v.literal("inactive"), v.literal("trial")),
+  },
+  handler: async (ctx, args) => {
+    const { userId } = await requirePaasAdmin(ctx);
+
+    // With Clerk, we don't need to check for existing users in our DB
+
+    const now = Date.now();
+    const { ownerEmail, ...associationData } = args;
+
+    // Create the association
+    const associationId = await ctx.db.insert("associations", {
+      ...associationData,
+      settings: {
+        allowSelfRegistration: false,
+        requireAdminApproval: true,
+        maxMembers: args.subscriptionTier === "free" ? 50 : args.subscriptionTier === "basic" ? 200 : undefined,
+        maxUnits: args.subscriptionTier === "free" ? 25 : args.subscriptionTier === "basic" ? 100 : undefined,
+      },
+      createdBy: userId,
+      createdAt: now,
+      updatedAt: now,
+      isActive: true,
+      trialEndsAt: args.subscriptionStatus === "trial" ? now + (30 * 24 * 60 * 60 * 1000) : undefined, // 30 days
+    });
+
+    // Create a member record for the owner (invited status)
+    const memberId = await ctx.db.insert("members", {
+      associationId,
+      email: args.ownerEmail,
+      name: args.ownerEmail.split('@')[0], // Use email prefix as default name
+      role: "admin",
+      status: "invited",
+      invitedBy: userId,
+      invitedAt: now,
+    });
+
+    // Note: Association membership will be created when user signs up and activates invitation
+
+    // Schedule sending the invitation email
+    await ctx.scheduler.runAfter(0, internal.emails.sendEmail, {
+      to: args.ownerEmail,
+      subject: `Invitation to manage ${args.name}`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
+          <h2 style="color: #2563eb;">Welcome to ${args.name}!</h2>
+          <p>You have been invited to manage this association as the administrator.</p>
+          <div style="background-color: #eff6ff; padding: 15px; border-radius: 6px; margin: 20px 0;">
+            <p><strong>To get started:</strong></p>
+            <ol>
+              <li>Visit the portal below</li>
+              <li>Create an account using: <strong>${args.ownerEmail}</strong></li>
+              <li>You'll automatically have admin access</li>
+            </ol>
+          </div>
+          <div style="text-align: center; margin: 20px 0;">
+            <a href="${process.env.CONVEX_SITE_URL || 'https://your-app-url.com'}" style="background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">Access Portal</a>
+          </div>
+        </div>
+      `,
+    });
+
+    return associationId;
+  },
+});
+
+// Create PaaS admin
+export const createPaasAdmin = mutation({
+  args: {
+    email: v.string(),
+    role: v.union(v.literal("super_admin"), v.literal("support"), v.literal("billing")),
+    permissions: v.array(v.string()),
+  },
+  handler: async (ctx, args) => {
+    const paasAdmin = await requirePaasAdmin(ctx);
+    
+    // Only super_admin can create other admins
+    if (paasAdmin.role !== "super_admin") {
+      throw new Error("Only super admins can create PaaS admins");
+    }
+
+    // With Clerk, we need to use the Clerk user ID directly
+    // For now, we'll assume the email corresponds to a Clerk user ID
+    // In a real implementation, you'd need to look up the Clerk user ID by email
+    
+    // Check if user is already a PaaS admin
+    const existingAdmin = await ctx.db
+      .query("paasAdmins")
+      .withIndex("by_user", (q) => q.eq("userId", args.email)) // Using email as placeholder for user ID
+      .first();
+
+    if (existingAdmin) {
+      throw new Error("User is already a PaaS admin");
+    }
+
+    const adminId = await ctx.db.insert("paasAdmins", {
+      userId: args.email, // Using email as placeholder for Clerk user ID
+      role: args.role,
+      permissions: args.permissions,
+      createdAt: Date.now(),
+      createdBy: paasAdmin.userId,
+      isActive: true,
+    });
+
+    return adminId;
+  },
+});
+
+// Suspend association
+export const suspendAssociation = mutation({
+  args: {
+    associationId: v.id("associations"),
+    reason: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const { userId } = await requirePaasAdmin(ctx);
+
+    const association = await ctx.db.get(args.associationId);
+    if (!association) {
+      throw new Error("Association not found");
+    }
+
+    await ctx.db.patch(args.associationId, {
+      subscriptionStatus: "suspended",
+      suspendedAt: Date.now(),
+      suspendedBy: userId,
+      suspensionReason: args.reason,
+      updatedAt: Date.now(),
+    });
+
+    return args.associationId;
+  },
+});
+
+// Reactivate association
+export const reactivateAssociation = mutation({
+  args: {
+    associationId: v.id("associations"),
+  },
+  handler: async (ctx, args) => {
+    await requirePaasAdmin(ctx);
+
+    const association = await ctx.db.get(args.associationId);
+    if (!association) {
+      throw new Error("Association not found");
+    }
+
+    await ctx.db.patch(args.associationId, {
+      subscriptionStatus: "active",
+      suspendedAt: undefined,
+      suspendedBy: undefined,
+      suspensionReason: undefined,
+      updatedAt: Date.now(),
+    });
+
+    return args.associationId;
+  },
+});
+
+// Update association subscription
+export const updateAssociationSubscription = mutation({
+  args: {
+    associationId: v.id("associations"),
+    tier: v.union(v.literal("free"), v.literal("basic"), v.literal("premium")),
+    status: v.union(v.literal("active"), v.literal("inactive"), v.literal("trial")),
+  },
+  handler: async (ctx, args) => {
+    await requirePaasAdmin(ctx);
+
+    const association = await ctx.db.get(args.associationId);
+    if (!association) {
+      throw new Error("Association not found");
+    }
+
+    await ctx.db.patch(args.associationId, {
+      subscriptionTier: args.tier,
+      subscriptionStatus: args.status,
+      updatedAt: Date.now(),
+    });
+
+    return args.associationId;
+  },
+});
+
+// Check if any PaaS admins exist in the system
+export const anyPaasAdminsExist = query({
+  args: {},
+  handler: async (ctx) => {
+    const admins = await ctx.db.query("paasAdmins").collect();
+    return admins.length > 0;
+  },
+});
+
+// Get platform statistics
+export const getPlatformStats = query({
+  args: {},
+  handler: async (ctx) => {
+    await requirePaasAdmin(ctx);
+
+    const associations = await ctx.db.query("associations").collect();
+    const totalAssociations = associations.length;
+    const activeAssociations = associations.filter(a => a.subscriptionStatus === "active").length;
+    const trialAssociations = associations.filter(a => a.subscriptionStatus === "trial").length;
+    const suspendedAssociations = associations.filter(a => a.subscriptionStatus === "suspended").length;
+
+    const allMembers = await ctx.db.query("associationMembers").collect();
+    const totalUsers = allMembers.length;
+    const activeUsers = allMembers.filter(m => m.status === "active").length;
+
+    const tierCounts = {
+      free: associations.filter(a => a.subscriptionTier === "free").length,
+      basic: associations.filter(a => a.subscriptionTier === "basic").length,
+      premium: associations.filter(a => a.subscriptionTier === "premium").length,
+    };
+
+    return {
+      totalAssociations,
+      activeAssociations,
+      trialAssociations,
+      suspendedAssociations,
+      totalUsers,
+      activeUsers,
+      tierCounts,
+    };
+  },
+});

@@ -1,78 +1,82 @@
-import { Authenticated, Unauthenticated, useQuery, useMutation } from "convex/react";
+import { SignInButton, UserButton } from "@clerk/clerk-react";
+import { Authenticated, Unauthenticated, AuthLoading, useQuery, useMutation } from "convex/react";
+import { AuthenticationForm } from "./components/AuthenticationForm";
 import { api } from "../convex/_generated/api";
-import { SignInForm } from "./SignInForm";
-import { SignOutButton } from "./SignOutButton";
-import { Toaster } from "sonner";
+import { toast, Toaster } from "sonner";
 import { Dashboard } from "./components/Dashboard";
+import { PaasAdminDashboard } from "./components/PaasAdminDashboard";
+import { InitialSetupScreen } from "./components/InitialSetupScreen";
 import { useEffect } from "react";
 
 export default function App() {
   return (
-    <div className="min-h-screen bg-slate-50">
+    <main className="min-h-screen bg-slate-50">
+      <Toaster position="top-right" />
+      <AuthLoading>
+        <div className="flex items-center justify-center min-h-screen">
+          <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+        </div>
+      </AuthLoading>
+      <Unauthenticated>
+        <div className="flex items-center justify-center min-h-screen py-8">
+          <div className="max-w-lg w-full space-y-8 p-8">
+            <div className="text-center">
+              <h1 className="text-3xl font-bold text-slate-900 mb-2">
+                Association Management Platform
+              </h1>
+              <p className="text-slate-600">
+                Manage your homeowners association with ease
+              </p>
+            </div>
+            <AuthenticationForm />
+          </div>
+        </div>
+      </Unauthenticated>
       <Authenticated>
         <AppContent />
       </Authenticated>
-      <Unauthenticated>
-        <LoginPage />
-      </Unauthenticated>
-      <Toaster />
-    </div>
+    </main>
   );
 }
 
 function AppContent() {
-  const currentMember = useQuery(api.members.getCurrentMember);
-  const bootstrap = useMutation(api.members.bootstrap);
+  const currentUser = useQuery(api.clerkAuth.loggedInUser);
+  const isPaasAdmin = useQuery(api.paasAdmin.isPaasAdmin);
+  const anyPaasAdminsExist = useQuery(api.paasAdmin.anyPaasAdminsExist);
+  const createUserIfNotExists = useMutation(api.clerkAuth.createUserIfNotExists);
+  const checkPendingInvitations = useMutation(api.clerkAuth.checkPendingInvitations);
+  const setupInitialPaasAdmin = useMutation(api.setupPaasAdmin.setupInitialPaasAdmin);
   
+  // Create user and check for pending invitations when user logs in
   useEffect(() => {
-    if (currentMember === null) {
-      bootstrap();
+    if (currentUser === null) {
+      // User is authenticated but doesn't exist in our DB yet
+      createUserIfNotExists().then(() => {
+        checkPendingInvitations().catch(console.error);
+      }).catch(console.error);
+    } else if (currentUser) {
+      checkPendingInvitations().catch(console.error);
     }
-  }, [currentMember, bootstrap]);
+  }, [currentUser, createUserIfNotExists, checkPendingInvitations]);
   
-  if (currentMember === undefined) {
+  // Show loading while checking user status
+  if (currentUser === undefined || isPaasAdmin === undefined || anyPaasAdminsExist === undefined) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600"></div>
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
       </div>
     );
   }
-
-  if (!currentMember) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-50">
-        <div className="max-w-md w-full mx-auto p-6 bg-white rounded-lg shadow-sm border">
-          <div className="text-center mb-6">
-            <h1 className="text-2xl font-bold text-slate-900 mb-2">Access Pending</h1>
-            <p className="text-slate-600">
-              Your account is being reviewed. Please contact an administrator for access.
-            </p>
-          </div>
-          <SignOutButton />
-        </div>
-      </div>
-    );
+  
+  // Show setup screen if no PaaS admins exist and user is logged in
+  if (currentUser && anyPaasAdminsExist === false) {
+    return <InitialSetupScreen />;
   }
-
-  return <Dashboard member={currentMember} />;
-}
-
-function LoginPage() {
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-slate-50">
-      <div className="max-w-md w-full mx-auto p-6">
-        <div className="text-center mb-8">
-          <h1 className="text-3xl font-bold text-slate-900 mb-2">
-            Residents Association
-          </h1>
-          <p className="text-slate-600">
-            Management portal for leaseholders and residents
-          </p>
-        </div>
-        <div className="bg-white rounded-lg shadow-sm border p-6">
-          <SignInForm />
-        </div>
-      </div>
-    </div>
-  );
+  
+  // Show PaaS admin dashboard if user is a PaaS admin and has no associations
+  if (isPaasAdmin) {
+    return <PaasAdminDashboard />;
+  }
+  
+  return <Dashboard />;
 }
