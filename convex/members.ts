@@ -127,6 +127,40 @@ export const list = query({
   },
 });
 
+// List members by unit
+export const listByUnit = query({
+  args: { 
+    associationId: v.id("associations"),
+    unit: v.string(),
+  },
+  handler: async (ctx, args) => {
+    const userId = await getClerkUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+
+    // Check if user is a member of this association
+    const associationMembership = await ctx.db
+      .query("associationMembers")
+      .withIndex("by_association_and_user", (q) => 
+        q.eq("associationId", args.associationId).eq("userId", userId)
+      )
+      .filter((q) => q.eq(q.field("status"), "active"))
+      .first();
+
+    if (!associationMembership) {
+      throw new Error("Not authorized");
+    }
+
+    return await ctx.db
+      .query("members")
+      .withIndex("by_association_and_unit", (q) => 
+        q.eq("associationId", args.associationId).eq("unit", args.unit)
+      )
+      .collect();
+  },
+});
+
 // Create new member
 export const create = mutation({
   args: {
@@ -167,6 +201,20 @@ export const create = mutation({
       throw new Error("Member with this email already exists");
     }
 
+    // Validate unit if provided
+    if (args.unit) {
+      const unit = await ctx.db
+        .query("units")
+        .withIndex("by_association_and_name", (q) => 
+          q.eq("associationId", args.associationId).eq("name", args.unit!)
+        )
+        .first();
+
+      if (!unit) {
+        throw new Error("Unit not found");
+      }
+    }
+
     const memberId = await ctx.db.insert("members", {
       ...args,
       status: "invited",
@@ -201,6 +249,7 @@ export const create = mutation({
         name: args.name,
         inviterName,
         unit: args.unit,
+        associationId: args.associationId,
       });
     } catch (error) {
       console.error("Failed to schedule invitation email:", error);

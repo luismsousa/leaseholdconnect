@@ -108,6 +108,20 @@ export const create = mutation({
       joinedAt: now,
     });
 
+    // Get user identity to create member record
+    const identity = await ctx.auth.getUserIdentity();
+    if (identity?.email) {
+      // Create member record for the creator
+      await ctx.db.insert("members", {
+        associationId,
+        email: identity.email,
+        name: identity.name || identity.email.split('@')[0],
+        role: "admin", // Owner gets admin role in members table
+        status: "active",
+        joinedAt: now,
+      });
+    }
+
     return associationId;
   },
 });

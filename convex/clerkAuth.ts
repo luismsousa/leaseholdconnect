@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { getCurrentUser } from "./clerkHelpers";
-import { api } from "./_generated/api";
+import { api, internal } from "./_generated/api";
 
 export const loggedInUser = query({
   args: {},
@@ -11,11 +11,15 @@ export const loggedInUser = query({
       return null;
     }
     
+    // Extract just the user ID part from tokenIdentifier
+    const parts = identity.tokenIdentifier.split('|');
+    const tokenIdentifier = parts.length > 1 ? parts[1] : identity.tokenIdentifier;
+    
     // Check if user exists in our users table
     const existingUser = await ctx.db
       .query("users")
       .withIndex("by_token", (q) =>
-        q.eq("tokenIdentifier", identity.tokenIdentifier)
+        q.eq("tokenIdentifier", tokenIdentifier)
       )
       .unique();
     
@@ -74,11 +78,15 @@ export const createUserIfNotExists = mutation({
       throw new Error("User not authenticated");
     }
     
+    // Extract just the user ID part from tokenIdentifier
+    const parts = identity.tokenIdentifier.split('|');
+    const tokenIdentifier = parts.length > 1 ? parts[1] : identity.tokenIdentifier;
+    
     // Check if user already exists
     const existingUser = await ctx.db
       .query("users")
       .withIndex("by_token", (q) =>
-        q.eq("tokenIdentifier", identity.tokenIdentifier)
+        q.eq("tokenIdentifier", tokenIdentifier)
       )
       .unique();
     
@@ -91,7 +99,7 @@ export const createUserIfNotExists = mutation({
       name: identity.name ?? identity.email ?? "Unknown User",
       email: identity.email,
       image: identity.pictureUrl,
-      tokenIdentifier: identity.tokenIdentifier,
+      tokenIdentifier: tokenIdentifier,
       isAnonymous: false,
     });
     
@@ -120,6 +128,30 @@ export const checkPendingInvitations = mutation({
         joinedAt: Date.now(),
       });
       
+      // Create associationMembers record for the user
+      // Extract user ID from tokenIdentifier
+      const parts = user.tokenIdentifier.split('|');
+      const userId = parts.length > 1 ? parts[1] : user.tokenIdentifier;
+      
+      // Check if associationMembers record already exists
+      const existingMembership = await ctx.db
+        .query("associationMembers")
+        .withIndex("by_association_and_user", (q) => 
+          q.eq("associationId", invitation.associationId).eq("userId", userId)
+        )
+        .first();
+      
+      if (!existingMembership) {
+        // Create associationMembers record
+        await ctx.db.insert("associationMembers", {
+          associationId: invitation.associationId,
+          userId: userId,
+          role: invitation.role === "admin" ? "admin" : "member",
+          status: "active",
+          joinedAt: Date.now(),
+        });
+      }
+      
       // Log the acceptance
       await ctx.db.insert("auditLogs", {
         associationId: invitation.associationId,
@@ -131,6 +163,21 @@ export const checkPendingInvitations = mutation({
         description: `${user.name} accepted invitation to join association`,
         timestamp: Date.now(),
       });
+
+      // Get association details for welcome email
+      const association = await ctx.db.get(invitation.associationId);
+      
+      // Send welcome email
+      try {
+        await ctx.scheduler.runAfter(0, internal.emails.sendWelcomeEmail, {
+          email: user.email,
+          name: user.name,
+          associationId: invitation.associationId,
+        });
+      } catch (error) {
+        console.error("Failed to schedule welcome email:", error);
+        // Don't throw error to avoid breaking the invitation acceptance process
+      }
     }
     
     return pendingInvitations.length;

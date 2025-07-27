@@ -50,6 +50,20 @@ export const list = query({
   },
 });
 
+// Get units for member assignment (no admin check needed)
+export const listForMembers = query({
+  args: { 
+    associationId: v.id("associations"),
+  },
+  handler: async (ctx, args) => {
+    return await ctx.db
+      .query("units")
+      .withIndex("by_association", (q) => q.eq("associationId", args.associationId))
+      .order("asc")
+      .collect();
+  },
+});
+
 // Create unit
 export const create = mutation({
   args: {
@@ -60,7 +74,6 @@ export const create = mutation({
     floor: v.optional(v.number()),
     type: v.optional(v.string()),
     size: v.optional(v.string()),
-    status: v.optional(v.union(v.literal("active"), v.literal("vacant"), v.literal("inactive"))),
   },
   handler: async (ctx, args) => {
     const { userId } = await requireAssociationAdmin(ctx, args.associationId);
@@ -79,7 +92,6 @@ export const create = mutation({
 
     const unitId = await ctx.db.insert("units", {
       ...args,
-      status: args.status || "active",
       createdBy: userId,
       createdAt: Date.now(),
       updatedAt: Date.now(),
@@ -99,7 +111,6 @@ export const update = mutation({
     floor: v.optional(v.number()),
     type: v.optional(v.string()),
     size: v.optional(v.string()),
-    status: v.optional(v.union(v.literal("active"), v.literal("vacant"), v.literal("inactive"))),
   },
   handler: async (ctx, args) => {
     const unit = await ctx.db.get(args.id);

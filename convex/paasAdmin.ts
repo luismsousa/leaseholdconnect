@@ -69,7 +69,7 @@ export const listAllAssociations = query({
     if (args.status) {
       associations = await ctx.db
         .query("associations")
-        .withIndex("by_subscription_status", (q) => q.eq("subscriptionStatus", args.status!))
+        .withIndex("by_status_and_subscription", (q) => q.eq("isActive", true).eq("subscriptionStatus", args.status!))
         .order("desc")
         .collect();
     } else if (args.tier) {
@@ -173,6 +173,7 @@ export const createAssociationAsAdmin = mutation({
     });
 
     // Note: Association membership will be created when user signs up and activates invitation
+    // We also need to create a placeholder associationMembers record that will be updated when the user signs up
 
     // Schedule sending the invitation email
     await ctx.scheduler.runAfter(0, internal.emails.sendEmail, {
@@ -191,13 +192,69 @@ export const createAssociationAsAdmin = mutation({
             </ol>
           </div>
           <div style="text-align: center; margin: 20px 0;">
-            <a href="${process.env.CONVEX_SITE_URL || 'https://your-app-url.com'}" style="background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">Access Portal</a>
+            <a href="${process.env.SITE_URL || process.env.CONVEX_SITE_URL || 'https://your-app-url.com'}" style="background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">Access Portal</a>
           </div>
         </div>
       `,
     });
 
     return associationId;
+  },
+});
+
+// Migration function to fix existing PaaS admin user IDs and users table
+export const migratePaasAdminUserIds = internalMutation({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx) => {
+    // Fix PaaS admin user IDs
+    const allPaasAdmins = await ctx.db.query("paasAdmins").collect();
+    
+    for (const admin of allPaasAdmins) {
+      // Check if the userId contains the full tokenIdentifier format
+      if (admin.userId.includes('|')) {
+        const parts = admin.userId.split('|');
+        const newUserId = parts.length > 1 ? parts[1] : admin.userId;
+        
+        // Update the record with the correct user ID
+        await ctx.db.patch(admin._id, {
+          userId: newUserId,
+        });
+      }
+    }
+    
+    // Fix users table tokenIdentifier
+    const allUsers = await ctx.db.query("users").collect();
+    
+    for (const user of allUsers) {
+      // Check if the tokenIdentifier contains the full format
+      if (user.tokenIdentifier.includes('|')) {
+        const parts = user.tokenIdentifier.split('|');
+        const newTokenIdentifier = parts.length > 1 ? parts[1] : user.tokenIdentifier;
+        
+        // Update the record with the correct tokenIdentifier
+        await ctx.db.patch(user._id, {
+          tokenIdentifier: newTokenIdentifier,
+        });
+      }
+    }
+    
+    return null;
+  },
+});
+
+// Public mutation to trigger the migration (for admin use)
+export const runMigration = mutation({
+  args: {},
+  returns: v.null(),
+  handler: async (ctx) => {
+    // Only allow PaaS admins to run migrations
+    await requirePaasAdmin(ctx);
+    
+    // Run the migration
+    await ctx.runMutation(internal.paasAdmin.migratePaasAdminUserIds, {});
+    
+    return null;
   },
 });
 
@@ -216,14 +273,24 @@ export const createPaasAdmin = mutation({
       throw new Error("Only super admins can create PaaS admins");
     }
 
-    // With Clerk, we need to use the Clerk user ID directly
-    // For now, we'll assume the email corresponds to a Clerk user ID
-    // In a real implementation, you'd need to look up the Clerk user ID by email
+    // Find the user by email in the users table
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", args.email))
+      .first();
+
+    if (!user) {
+      throw new Error("User not found. The user must sign up with this email first.");
+    }
+
+    // Extract the user ID from the tokenIdentifier
+    const parts = user.tokenIdentifier.split('|');
+    const userId = parts.length > 1 ? parts[1] : user.tokenIdentifier;
     
     // Check if user is already a PaaS admin
     const existingAdmin = await ctx.db
       .query("paasAdmins")
-      .withIndex("by_user", (q) => q.eq("userId", args.email)) // Using email as placeholder for user ID
+      .withIndex("by_user", (q) => q.eq("userId", userId))
       .first();
 
     if (existingAdmin) {
@@ -231,7 +298,7 @@ export const createPaasAdmin = mutation({
     }
 
     const adminId = await ctx.db.insert("paasAdmins", {
-      userId: args.email, // Using email as placeholder for Clerk user ID
+      userId: userId,
       role: args.role,
       permissions: args.permissions,
       createdAt: Date.now(),
@@ -359,5 +426,191 @@ export const getPlatformStats = query({
       activeUsers,
       tierCounts,
     };
+  },
+});
+
+// Get association members (PaaS admin only)
+export const getAssociationMembers = query({
+  args: {
+    associationId: v.id("associations"),
+  },
+  returns: v.array(
+    v.object({
+      _id: v.id("associationMembers"),
+      _creationTime: v.number(),
+      associationId: v.id("associations"),
+      userId: v.string(),
+      role: v.union(v.literal("owner"), v.literal("admin"), v.literal("member")),
+      status: v.union(v.literal("active"), v.literal("inactive"), v.literal("invited")),
+      invitedBy: v.optional(v.string()),
+      invitedAt: v.optional(v.number()),
+      joinedAt: v.optional(v.number()),
+      permissions: v.optional(v.array(v.string())),
+      user: v.object({
+        _id: v.string(),
+        name: v.optional(v.string()),
+        email: v.optional(v.string()),
+      }),
+    })
+  ),
+  handler: async (ctx, args) => {
+    await requirePaasAdmin(ctx);
+
+    const association = await ctx.db.get(args.associationId);
+    if (!association) {
+      throw new Error("Association not found");
+    }
+
+    const memberships = await ctx.db
+      .query("associationMembers")
+      .withIndex("by_association", (q) => q.eq("associationId", args.associationId))
+      .collect();
+
+    // Get user details for each membership
+    const membersWithDetails = await Promise.all(
+      memberships.map(async (membership) => {
+        // Get user details from users table
+        const user = await ctx.db
+          .query("users")
+          .withIndex("by_token", (q) => q.eq("tokenIdentifier", membership.userId))
+          .first();
+
+        return {
+          ...membership,
+          user: {
+            _id: membership.userId,
+            name: user?.name || "Unknown User",
+            email: user?.email || "unknown@example.com",
+          },
+        };
+      })
+    );
+
+    return membersWithDetails;
+  },
+});
+
+// Add admin to association (PaaS admin only)
+export const addAssociationAdmin = mutation({
+  args: {
+    associationId: v.id("associations"),
+    email: v.string(),
+    role: v.union(v.literal("admin"), v.literal("member")),
+  },
+  returns: v.id("associationMembers"),
+  handler: async (ctx, args) => {
+    const { userId } = await requirePaasAdmin(ctx);
+
+    const association = await ctx.db.get(args.associationId);
+    if (!association) {
+      throw new Error("Association not found");
+    }
+
+    // Find user by email
+    const user = await ctx.db
+      .query("users")
+      .withIndex("by_email", (q) => q.eq("email", args.email))
+      .first();
+
+    if (!user) {
+      throw new Error("User not found. The user must sign up with this email first.");
+    }
+
+    // Extract the user ID from the tokenIdentifier
+    const parts = user.tokenIdentifier.split('|');
+    const targetUserId = parts.length > 1 ? parts[1] : user.tokenIdentifier;
+
+    // Check if user is already a member of this association
+    const existingMembership = await ctx.db
+      .query("associationMembers")
+      .withIndex("by_association_and_user", (q) => 
+        q.eq("associationId", args.associationId).eq("userId", targetUserId)
+      )
+      .first();
+
+    if (existingMembership) {
+      // Update existing membership
+      await ctx.db.patch(existingMembership._id, {
+        role: args.role,
+        status: "active",
+        joinedAt: Date.now(),
+      });
+      return existingMembership._id;
+    }
+
+    // Create new membership
+    const membershipId = await ctx.db.insert("associationMembers", {
+      associationId: args.associationId,
+      userId: targetUserId,
+      role: args.role,
+      status: "active",
+      joinedAt: Date.now(),
+    });
+
+    return membershipId;
+  },
+});
+
+// Remove admin from association (PaaS admin only)
+export const removeAssociationAdmin = mutation({
+  args: {
+    associationId: v.id("associations"),
+    membershipId: v.id("associationMembers"),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await requirePaasAdmin(ctx);
+
+    const association = await ctx.db.get(args.associationId);
+    if (!association) {
+      throw new Error("Association not found");
+    }
+
+    const membership = await ctx.db.get(args.membershipId);
+    if (!membership || membership.associationId !== args.associationId) {
+      throw new Error("Membership not found");
+    }
+
+    // Can't remove the owner
+    if (membership.role === "owner") {
+      throw new Error("Cannot remove the association owner");
+    }
+
+    await ctx.db.delete(args.membershipId);
+    return null;
+  },
+});
+
+// Update association member role (PaaS admin only)
+export const updateAssociationMemberRole = mutation({
+  args: {
+    associationId: v.id("associations"),
+    membershipId: v.id("associationMembers"),
+    role: v.union(v.literal("owner"), v.literal("admin"), v.literal("member")),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await requirePaasAdmin(ctx);
+
+    const association = await ctx.db.get(args.associationId);
+    if (!association) {
+      throw new Error("Association not found");
+    }
+
+    const membership = await ctx.db.get(args.membershipId);
+    if (!membership || membership.associationId !== args.associationId) {
+      throw new Error("Membership not found");
+    }
+
+    // Can't change owner role
+    if (membership.role === "owner") {
+      throw new Error("Cannot change the owner's role");
+    }
+
+    await ctx.db.patch(args.membershipId, {
+      role: args.role,
+    });
+
+    return null;
   },
 });

@@ -1,0 +1,21 @@
+{
+  "mcpServers": {
+    "convex-args": {
+      "command": "npx",
+      "args": [
+        "-y", 
+        "convex@latest", 
+        "mcp", 
+        "start", 
+        "--project-dir", 
+        "${workspaceFolder}", 
+        "--env-file", 
+        "${workspaceFolder}/.env.local"],
+      "envFile": "${workspaceFolder}/.env.local"
+    },
+    "convex": {
+      "command": "npx",
+      "args": ["-y", "convex@latest", "mcp", "start"]
+    }
+  }
+}

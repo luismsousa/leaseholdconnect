@@ -27,8 +27,7 @@ const applicationTables = {
     isActive: v.boolean(),
   })
     .index("by_user", ["userId"])
-    .index("by_role", ["role"])
-    .index("by_status", ["isActive"]),
+    .index("by_role_and_status", ["role", "isActive"]),
 
   associations: defineTable({
     name: v.string(),
@@ -63,8 +62,7 @@ const applicationTables = {
   })
     .index("by_name", ["name"])
     .index("by_creator", ["createdBy"])
-    .index("by_status", ["isActive"])
-    .index("by_subscription_status", ["subscriptionStatus"])
+    .index("by_status_and_subscription", ["isActive", "subscriptionStatus"])
     .index("by_subscription_tier", ["subscriptionTier"]),
 
   associationMembers: defineTable({
@@ -81,8 +79,8 @@ const applicationTables = {
     .index("by_association", ["associationId"])
     .index("by_user", ["userId"])
     .index("by_association_and_user", ["associationId", "userId"])
-    .index("by_role", ["role"])
-    .index("by_status", ["status"]),
+    .index("by_association_and_role", ["associationId", "role"])
+    .index("by_association_and_status", ["associationId", "status"]),
 
   // User preferences for association context
   userPreferences: defineTable({
@@ -130,7 +128,6 @@ const applicationTables = {
     floor: v.optional(v.number()),
     type: v.optional(v.string()),
     size: v.optional(v.string()),
-    status: v.optional(v.union(v.literal("active"), v.literal("vacant"), v.literal("inactive"))),
     createdBy: v.optional(v.string()), // Clerk user ID
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -150,8 +147,8 @@ const applicationTables = {
     uploadedBy: v.id("members"),
     uploadedAt: v.number(),
     isPublic: v.boolean(),
-    visibilityType: v.union(v.literal("all"), v.literal("units"), v.literal("admin")),
-    visibleToUnits: v.optional(v.array(v.string())),
+    visibilityType: v.union(v.literal("all"), v.literal("buildings"), v.literal("admin")),
+    visibleToBuildings: v.optional(v.array(v.string())),
     downloadUrl: v.optional(v.string()),
     meetingId: v.optional(v.id("meetings")),
   })
@@ -213,7 +210,8 @@ const applicationTables = {
     .index("by_association", ["associationId"])
     .index("by_association_and_meeting", ["associationId", "meetingId"])
     .index("by_association_and_member", ["associationId", "memberId"])
-    .index("by_meeting_and_member", ["meetingId", "memberId"]),
+    .index("by_meeting_and_member", ["meetingId", "memberId"])
+    .index("by_meeting_and_status", ["meetingId", "status"]),
 
   votingTopics: defineTable({
     associationId: v.id("associations"),

@@ -13,6 +13,26 @@ The backend code is in the `convex` directory.
   
 `npm run dev` will start the frontend and backend servers.
 
+## Features
+
+- **User Management**: Invite and manage association members
+- **Meeting Management**: Schedule and track association meetings
+- **Document Management**: Store and organize important documents
+- **Voting System**: Create polls and track member votes
+- **Audit Logging**: Track all important actions and changes
+- **Email Notifications**: Send invitations, welcome emails, and notifications using Resend
+
+## Email Functionality
+
+This app includes comprehensive email functionality using [Resend](https://resend.com):
+
+- **Invitation Emails**: Sent when new members are invited
+- **Welcome Emails**: Sent when users accept invitations
+- **Notification Emails**: Custom notifications for various events
+- **Test Emails**: Development testing functionality
+
+See [EMAIL_SETUP.md](./EMAIL_SETUP.md) for detailed setup instructions.
+
 ## App authentication
 
 Chef apps use [Convex Auth](https://auth.convex.dev/) with Anonymous auth for easy sign in. You may wish to change this before deploying your app.

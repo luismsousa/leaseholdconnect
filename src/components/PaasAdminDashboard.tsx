@@ -15,11 +15,13 @@ export function PaasAdminDashboard() {
   const suspendAssociation = useMutation(api.paasAdmin.suspendAssociation);
   const reactivateAssociation = useMutation(api.paasAdmin.reactivateAssociation);
   const updateSubscription = useMutation(api.paasAdmin.updateAssociationSubscription);
+  const runMigration = useMutation(api.paasAdmin.runMigration);
 
   const [showCreateAdminForm, setShowCreateAdminForm] = useState(false);
   const [showCreateAssociationForm, setShowCreateAssociationForm] = useState(false);
   const [selectedAssociation, setSelectedAssociation] = useState<any>(null);
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
+  const [showEditAdminsModal, setShowEditAdminsModal] = useState(false);
 
   const handleSuspend = async (associationId: string, reason: string) => {
     try {
@@ -36,6 +38,15 @@ export function PaasAdminDashboard() {
       toast.success("Association reactivated successfully");
     } catch (error) {
       toast.error("Failed to reactivate association");
+    }
+  };
+
+  const handleRunMigration = async () => {
+    try {
+      await runMigration();
+      toast.success("Migration completed successfully");
+    } catch (error) {
+      toast.error("Migration failed: " + (error as Error).message);
     }
   };
 
@@ -60,6 +71,12 @@ export function PaasAdminDashboard() {
           </p>
         </div>
         <div className="flex items-center space-x-4">
+          <button
+            onClick={handleRunMigration}
+            className="px-3 py-1.5 text-sm font-medium text-white bg-orange-600 rounded-md hover:bg-orange-700"
+          >
+            🔧 Fix User IDs & Tokens
+          </button>
           <span className="text-sm text-slate-600">
             {paasAdmin.user?.name || paasAdmin.user?.email}
           </span>
@@ -249,6 +266,15 @@ export function PaasAdminDashboard() {
                     <button
                       onClick={() => {
                         setSelectedAssociation(association);
+                        setShowEditAdminsModal(true);
+                      }}
+                      className="px-3 py-1 text-sm font-medium text-indigo-700 bg-indigo-100 rounded-md hover:bg-indigo-200"
+                    >
+                      Edit Admins
+                    </button>
+                    <button
+                      onClick={() => {
+                        setSelectedAssociation(association);
                         setShowSubscriptionModal(true);
                       }}
                       className="px-3 py-1 text-sm font-medium text-blue-700 bg-blue-100 rounded-md hover:bg-blue-200"
@@ -267,7 +293,7 @@ export function PaasAdminDashboard() {
                         onClick={() => {
                           const reason = prompt("Reason for suspension:");
                           if (reason) {
-                            handleSuspend(association._id, reason);
+                            void handleSuspend(association._id, reason);
                           }
                         }}
                         className="px-3 py-1 text-sm font-medium text-red-700 bg-red-100 rounded-md hover:bg-red-200"
@@ -295,6 +321,17 @@ export function PaasAdminDashboard() {
         />
       )}
 
+      {/* Edit Admins Modal */}
+      {showEditAdminsModal && selectedAssociation && (
+        <EditAdminsModal
+          association={selectedAssociation}
+          onClose={() => {
+            setShowEditAdminsModal(false);
+            setSelectedAssociation(null);
+          }}
+        />
+      )}
+
       {/* Create Admin Modal */}
       {showCreateAdminForm && (
         <CreateAdminModal onClose={() => setShowCreateAdminForm(false)} />
@@ -308,6 +345,215 @@ export function PaasAdminDashboard() {
   );
 }
 
+function EditAdminsModal({ association, onClose }: { association: any; onClose: () => void }) {
+  const members = useQuery(api.paasAdmin.getAssociationMembers, { associationId: association._id });
+  const addAdmin = useMutation(api.paasAdmin.addAssociationAdmin);
+  const removeAdmin = useMutation(api.paasAdmin.removeAssociationAdmin);
+  const updateRole = useMutation(api.paasAdmin.updateAssociationMemberRole);
+  
+  const [showAddForm, setShowAddForm] = useState(false);
+  const [addForm, setAddForm] = useState({
+    email: "",
+    role: "admin" as "admin" | "member",
+  });
+
+  const handleAddAdmin = (e: React.FormEvent) => {
+    e.preventDefault();
+    addAdmin({
+      associationId: association._id,
+      email: addForm.email,
+      role: addForm.role,
+    })
+      .then(() => {
+        toast.success("Admin added successfully");
+        setAddForm({ email: "", role: "admin" });
+        setShowAddForm(false);
+      })
+      .catch((error: unknown) => {
+        toast.error("Failed to add admin: " + (error as Error).message);
+      });
+  };
+
+  const handleRemoveAdmin = (membershipId: string) => {
+    if (!confirm("Are you sure you want to remove this admin?")) return;
+    
+    removeAdmin({
+      associationId: association._id,
+      membershipId: membershipId as any,
+    })
+      .then(() => {
+        toast.success("Admin removed successfully");
+      })
+      .catch((error: unknown) => {
+        toast.error("Failed to remove admin: " + (error as Error).message);
+      });
+  };
+
+  const handleUpdateRole = (membershipId: string, newRole: "owner" | "admin" | "member") => {
+    updateRole({
+      associationId: association._id,
+      membershipId: membershipId as any,
+      role: newRole,
+    })
+      .then(() => {
+        toast.success("Role updated successfully");
+      })
+      .catch((error: unknown) => {
+        toast.error("Failed to update role: " + (error as Error).message);
+      });
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
+      <div className="bg-white rounded-lg shadow-xl max-w-4xl w-full p-6 max-h-[90vh] overflow-y-auto">
+        <div className="flex justify-between items-center mb-6">
+          <h3 className="text-lg font-medium text-slate-900">
+            Manage Admins - {association.name}
+          </h3>
+          <button
+            onClick={onClose}
+            className="text-slate-400 hover:text-slate-600"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div className="mb-6">
+          <button
+            onClick={() => setShowAddForm(true)}
+            className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700"
+          >
+            + Add Admin
+          </button>
+        </div>
+
+        {showAddForm && (
+          <div className="mb-6 p-4 bg-slate-50 rounded-lg">
+            <h4 className="text-sm font-medium text-slate-900 mb-3">Add New Admin</h4>
+            <form onSubmit={handleAddAdmin} className="space-y-3">
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Email *</label>
+                <input
+                  type="email"
+                  required
+                  value={addForm.email}
+                  onChange={(e) => setAddForm({ ...addForm, email: e.target.value })}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-md shadow-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                  placeholder="admin@example.com"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Role</label>
+                <select
+                  value={addForm.role}
+                  onChange={(e) => setAddForm({ ...addForm, role: e.target.value as any })}
+                  className="w-full border border-slate-300 rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-indigo-500 focus:border-indigo-500"
+                >
+                  <option value="admin">Admin</option>
+                  <option value="member">Member</option>
+                </select>
+              </div>
+              <div className="flex space-x-3">
+                <button
+                  type="submit"
+                  className="px-4 py-2 text-sm font-medium text-white bg-indigo-600 rounded-md hover:bg-indigo-700"
+                >
+                  Add Admin
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowAddForm(false)}
+                  className="px-4 py-2 text-sm font-medium text-slate-700 bg-white border border-slate-300 rounded-md hover:bg-slate-50"
+                >
+                  Cancel
+                </button>
+              </div>
+            </form>
+          </div>
+        )}
+
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-slate-200">
+            <thead className="bg-slate-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                  User
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                  Role
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                  Status
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                  Joined
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-slate-200">
+              {members?.map((member) => (
+                <tr key={member._id}>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div>
+                      <div className="text-sm font-medium text-slate-900">
+                        {member.user.name || "Unknown User"}
+                      </div>
+                      <div className="text-sm text-slate-500">
+                        {member.user.email || "unknown@example.com"}
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <select
+                      value={member.role}
+                      onChange={(e) => handleUpdateRole(member._id, e.target.value as any)}
+                      disabled={member.role === "owner"}
+                      className={`text-sm border border-slate-300 rounded px-2 py-1 ${
+                        member.role === "owner" ? "bg-slate-100 text-slate-500" : ""
+                      }`}
+                    >
+                      <option value="owner">Owner</option>
+                      <option value="admin">Admin</option>
+                      <option value="member">Member</option>
+                    </select>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                      member.status === "active" 
+                        ? "bg-green-100 text-green-800" 
+                        : member.status === "invited"
+                        ? "bg-yellow-100 text-yellow-800"
+                        : "bg-red-100 text-red-800"
+                    }`}>
+                      {member.status}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
+                    {member.joinedAt ? new Date(member.joinedAt).toLocaleDateString() : "Invited"}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                    {member.role !== "owner" && (
+                      <button
+                        onClick={() => handleRemoveAdmin(member._id)}
+                        className="text-red-600 hover:text-red-900"
+                      >
+                        Remove
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function SubscriptionModal({ association, onClose, onUpdate }: any) {
   const [form, setForm] = useState({
     tier: association.subscriptionTier,
@@ -315,22 +561,24 @@ function SubscriptionModal({ association, onClose, onUpdate }: any) {
   });
   const [updating, setUpdating] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setUpdating(true);
-    try {
-      await onUpdate({
-        associationId: association._id,
-        tier: form.tier,
-        status: form.status,
+    onUpdate({
+      associationId: association._id,
+      tier: form.tier,
+      status: form.status,
+    })
+      .then(() => {
+        toast.success("Subscription updated successfully");
+        onClose();
+      })
+      .catch((error: unknown) => {
+        toast.error("Failed to update subscription");
+      })
+      .finally(() => {
+        setUpdating(false);
       });
-      toast.success("Subscription updated successfully");
-      onClose();
-    } catch (error) {
-      toast.error("Failed to update subscription");
-    } finally {
-      setUpdating(false);
-    }
   };
 
   return (
@@ -396,18 +644,20 @@ function CreateAdminModal({ onClose }: { onClose: () => void }) {
   const [creating, setCreating] = useState(false);
   const createPaasAdmin = useMutation(api.paasAdmin.createPaasAdmin);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setCreating(true);
-    try {
-      await createPaasAdmin(form);
-      toast.success("PaaS admin created successfully");
-      onClose();
-    } catch (error) {
-      toast.error("Failed to create PaaS admin");
-    } finally {
-      setCreating(false);
-    }
+    createPaasAdmin(form)
+      .then(() => {
+        toast.success("PaaS admin created successfully");
+        onClose();
+      })
+      .catch((error: unknown) => {
+        toast.error("Failed to create PaaS admin");
+      })
+      .finally(() => {
+        setCreating(false);
+      });
   };
 
   return (
@@ -478,18 +728,20 @@ function CreateAssociationModal({ onClose }: { onClose: () => void }) {
   const [creating, setCreating] = useState(false);
   const createAssociation = useMutation(api.paasAdmin.createAssociationAsAdmin);
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     setCreating(true);
-    try {
-      await createAssociation(form);
-      toast.success("Association created successfully");
-      onClose();
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Failed to create association");
-    } finally {
-      setCreating(false);
-    }
+    createAssociation(form)
+      .then(() => {
+        toast.success("Association created successfully");
+        onClose();
+      })
+      .catch((error: unknown) => {
+        toast.error(error instanceof Error ? error.message : "Failed to create association");
+      })
+      .finally(() => {
+        setCreating(false);
+      });
   };
 
   return (

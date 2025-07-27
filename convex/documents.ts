@@ -40,9 +40,10 @@ export const list = query({
   args: { 
     associationId: v.id("associations"),
     category: v.optional(v.string()),
+    building: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await requireAssociationMember(ctx, args.associationId);
+    const { userId, membership } = await requireAssociationMember(ctx, args.associationId);
 
     let query = ctx.db
       .query("documents")
@@ -58,9 +59,65 @@ export const list = query({
 
     const documents = await query.order("desc").collect();
 
+    // Filter documents based on visibility and user's building
+    const filteredDocuments = [];
+    for (const doc of documents) {
+      // Admins can see all documents
+      if (membership.role === "owner" || membership.role === "admin") {
+        filteredDocuments.push(doc);
+        continue;
+      }
+
+      // Public documents are visible to all
+      if (doc.isPublic) {
+        filteredDocuments.push(doc);
+        continue;
+      }
+
+      // Admin-only documents are not visible to regular members
+      if (doc.visibilityType === "admin") {
+        continue;
+      }
+
+      // All buildings documents are visible to all members
+      if (doc.visibilityType === "all") {
+        filteredDocuments.push(doc);
+        continue;
+      }
+
+      // Building-specific documents
+      if (doc.visibilityType === "buildings" && doc.visibleToBuildings) {
+        // Get user's email from auth context
+        const identity = await ctx.auth.getUserIdentity();
+        if (identity?.email) {
+          // Get member's building from their unit
+          const member = await ctx.db
+            .query("members")
+            .withIndex("by_association_and_email", (q) => 
+              q.eq("associationId", args.associationId).eq("email", identity.email!)
+            )
+            .first();
+
+          if (member && member.unit) {
+            // Get the building for the member's unit
+            const unit = await ctx.db
+              .query("units")
+              .withIndex("by_association_and_name", (q) => 
+                q.eq("associationId", args.associationId).eq("name", member.unit!)
+              )
+              .first();
+
+            if (unit && unit.building && doc.visibleToBuildings.includes(unit.building)) {
+              filteredDocuments.push(doc);
+            }
+          }
+        }
+      }
+    }
+
     // Get signed URLs for documents
     const documentsWithUrls = await Promise.all(
-      documents.map(async (doc) => {
+      filteredDocuments.map(async (doc) => {
         const url = await ctx.storage.getUrl(doc.fileId);
         return { ...doc, url };
       })
@@ -81,8 +138,8 @@ export const create = mutation({
     fileName: v.string(),
     fileSize: v.number(),
     isPublic: v.boolean(),
-    visibilityType: v.union(v.literal("all"), v.literal("units"), v.literal("admin")),
-    visibleToUnits: v.optional(v.array(v.string())),
+    visibilityType: v.union(v.literal("all"), v.literal("buildings"), v.literal("admin")),
+    visibleToBuildings: v.optional(v.array(v.string())),
     meetingId: v.optional(v.id("meetings")),
   },
   handler: async (ctx, args) => {
@@ -112,6 +169,40 @@ export const create = mutation({
     });
 
     return documentId;
+  },
+});
+
+// Get available buildings for an association
+export const getBuildings = query({
+  args: { associationId: v.id("associations") },
+  returns: v.array(v.string()),
+  handler: async (ctx, args) => {
+    await requireAssociationMember(ctx, args.associationId);
+    
+    const units = await ctx.db
+      .query("units")
+      .withIndex("by_association", (q) => q.eq("associationId", args.associationId))
+      .collect();
+    
+    const buildings = Array.from(new Set(units.map(unit => unit.building).filter((building): building is string => Boolean(building))));
+    return buildings;
+  },
+});
+
+// Get document categories for an association
+export const getCategories = query({
+  args: { associationId: v.id("associations") },
+  returns: v.array(v.string()),
+  handler: async (ctx, args) => {
+    await requireAssociationMember(ctx, args.associationId);
+    
+    const documents = await ctx.db
+      .query("documents")
+      .withIndex("by_association", (q) => q.eq("associationId", args.associationId))
+      .collect();
+    
+    const categories = Array.from(new Set(documents.map(doc => doc.category)));
+    return categories;
   },
 });
 

@@ -6,11 +6,15 @@ export async function getCurrentUser(ctx: QueryCtx | MutationCtx) {
     return null;
   }
   
+  // Extract just the user ID part from tokenIdentifier
+  const parts = identity.tokenIdentifier.split('|');
+  const tokenIdentifier = parts.length > 1 ? parts[1] : identity.tokenIdentifier;
+  
   // Try to find existing user
   const existingUser = await ctx.db
     .query("users")
     .withIndex("by_token", (q) =>
-      q.eq("tokenIdentifier", identity.tokenIdentifier)
+      q.eq("tokenIdentifier", tokenIdentifier)
     )
     .unique();
   
@@ -32,7 +36,14 @@ export async function requireUser(ctx: QueryCtx | MutationCtx) {
 // Legacy function names for backward compatibility
 export async function getClerkUserId(ctx: QueryCtx | MutationCtx) {
   const identity = await ctx.auth.getUserIdentity();
-  return identity?.tokenIdentifier ?? null;
+  if (!identity?.tokenIdentifier) {
+    return null;
+  }
+  
+  // Extract just the user ID part after the | character
+  // tokenIdentifier format: "https://domain.clerk.accounts.dev|user_123456"
+  const parts = identity.tokenIdentifier.split('|');
+  return parts.length > 1 ? parts[1] : identity.tokenIdentifier;
 }
 
 export async function requireClerkAuth(ctx: QueryCtx | MutationCtx) {
@@ -40,7 +51,11 @@ export async function requireClerkAuth(ctx: QueryCtx | MutationCtx) {
   if (!identity) {
     throw new Error("User not authenticated");
   }
-  return identity.tokenIdentifier;
+  
+  // Extract just the user ID part after the | character
+  // tokenIdentifier format: "https://domain.clerk.accounts.dev|user_123456"
+  const parts = identity.tokenIdentifier.split('|');
+  return parts.length > 1 ? parts[1] : identity.tokenIdentifier;
 }
 
 export async function requirePaasAdmin(ctx: QueryCtx | MutationCtx) {

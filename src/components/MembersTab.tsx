@@ -10,31 +10,36 @@ interface MembersTabProps {
 
 export function MembersTab({ associationId }: MembersTabProps) {
   const members = useQuery(api.members.list, { associationId });
+  const units = useQuery(api.units.listForMembers, { associationId });
   const inviteMember = useMutation(api.members.create);
   const updateMember = useMutation(api.members.update);
   const removeMember = useMutation(api.members.remove);
   
   const [showInviteForm, setShowInviteForm] = useState(false);
   const [editingMember, setEditingMember] = useState<string | null>(null);
+  const [selectedUnitFilter, setSelectedUnitFilter] = useState<string>("");
   const [inviteForm, setInviteForm] = useState({
     email: "",
     name: "",
     role: "member" as "member" | "admin",
-    unitNumber: "",
+    unitId: "",
   });
 
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
+      // Find the unit name by unitId
+      const selectedUnit = units?.find(unit => unit._id === inviteForm.unitId);
+      
       await inviteMember({
         associationId,
         email: inviteForm.email,
         name: inviteForm.name,
         role: inviteForm.role,
-        unit: inviteForm.unitNumber || undefined,
+        unit: selectedUnit?.name || undefined,
       });
       toast.success("Member invited successfully");
-      setInviteForm({ email: "", name: "", role: "member", unitNumber: "" });
+      setInviteForm({ email: "", name: "", role: "member", unitId: "" });
       setShowInviteForm(false);
     } catch (error) {
       toast.error("Failed to invite member: " + (error as Error).message);
@@ -45,6 +50,16 @@ export function MembersTab({ associationId }: MembersTabProps) {
     try {
       await updateMember({ id: memberId, role: newRole });
       toast.success("Member role updated");
+      setEditingMember(null);
+    } catch (error) {
+      toast.error("Failed to update member: " + (error as Error).message);
+    }
+  };
+
+  const handleUpdateUnit = async (memberId: Id<"members">, newUnit: string) => {
+    try {
+      await updateMember({ id: memberId, unit: newUnit || undefined });
+      toast.success("Member unit updated");
       setEditingMember(null);
     } catch (error) {
       toast.error("Failed to update member: " + (error as Error).message);
@@ -62,7 +77,7 @@ export function MembersTab({ associationId }: MembersTabProps) {
     }
   };
 
-  if (!members) {
+  if (!members || !units) {
     return (
       <div className="bg-white rounded-lg shadow-sm p-6">
         <div className="animate-pulse">
@@ -81,12 +96,26 @@ export function MembersTab({ associationId }: MembersTabProps) {
     <div className="bg-white rounded-lg shadow-sm p-6">
       <div className="flex items-center justify-between mb-6">
         <h2 className="text-2xl font-bold text-slate-900">Members</h2>
-        <button
-          onClick={() => setShowInviteForm(true)}
-          className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-        >
-          Invite Member
-        </button>
+        <div className="flex items-center space-x-4">
+          <select
+            value={selectedUnitFilter}
+            onChange={(e) => setSelectedUnitFilter(e.target.value)}
+            className="px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            <option value="">All Units</option>
+            {units?.map((unit) => (
+              <option key={unit._id} value={unit.name}>
+                {unit.name} {unit.building ? `(${unit.building})` : ""}
+              </option>
+            ))}
+          </select>
+          <button
+            onClick={() => setShowInviteForm(true)}
+            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+          >
+            Invite Member
+          </button>
+        </div>
       </div>
 
       {showInviteForm && (
@@ -133,14 +162,20 @@ export function MembersTab({ associationId }: MembersTabProps) {
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Unit Number
+                  Unit
                 </label>
-                <input
-                  type="text"
-                  value={inviteForm.unitNumber}
-                  onChange={(e) => setInviteForm({ ...inviteForm, unitNumber: e.target.value })}
+                <select
+                  value={inviteForm.unitId}
+                  onChange={(e) => setInviteForm({ ...inviteForm, unitId: e.target.value })}
                   className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
-                />
+                >
+                  <option value="">Select a unit (optional)</option>
+                  {units?.map((unit) => (
+                    <option key={unit._id} value={unit._id}>
+                      {unit.name} {unit.building ? `(${unit.building})` : ""}
+                    </option>
+                  ))}
+                </select>
               </div>
             </div>
             <div className="flex space-x-3">
@@ -187,7 +222,9 @@ export function MembersTab({ associationId }: MembersTabProps) {
             </tr>
           </thead>
           <tbody className="bg-white divide-y divide-slate-200">
-            {members.map((member) => (
+            {members
+              .filter(member => !selectedUnitFilter || member.unit === selectedUnitFilter)
+              .map((member) => (
               <tr key={member._id} className="hover:bg-slate-50">
                 <td className="px-6 py-4 whitespace-nowrap">
                   <div className="flex items-center">
@@ -205,7 +242,22 @@ export function MembersTab({ associationId }: MembersTabProps) {
                   </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
-                  {member.unit || "—"}
+                  {editingMember === member._id ? (
+                    <select
+                      value={member.unit || ""}
+                      onChange={(e) => handleUpdateUnit(member._id, e.target.value)}
+                      className="text-sm border border-slate-300 rounded px-2 py-1"
+                    >
+                      <option value="">No unit</option>
+                      {units?.map((unit) => (
+                        <option key={unit._id} value={unit.name}>
+                          {unit.name} {unit.building ? `(${unit.building})` : ""}
+                        </option>
+                      ))}
+                    </select>
+                  ) : (
+                    member.unit || "—"
+                  )}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
                   {editingMember === member._id ? (
@@ -271,11 +323,18 @@ export function MembersTab({ associationId }: MembersTabProps) {
           </tbody>
         </table>
         
-        {members.length === 0 && (
+        {members.filter(member => !selectedUnitFilter || member.unit === selectedUnitFilter).length === 0 && (
           <div className="text-center py-8">
             <div className="text-slate-400 text-4xl mb-4">👥</div>
-            <h3 className="text-lg font-medium text-slate-900 mb-2">No members yet</h3>
-            <p className="text-slate-600">Start by inviting your first member to the association.</p>
+            <h3 className="text-lg font-medium text-slate-900 mb-2">
+              {selectedUnitFilter ? `No members in ${selectedUnitFilter}` : "No members yet"}
+            </h3>
+            <p className="text-slate-600">
+              {selectedUnitFilter 
+                ? "No members are currently assigned to this unit." 
+                : "Start by inviting your first member to the association."
+              }
+            </p>
           </div>
         )}
       </div>
