@@ -47,7 +47,6 @@ export function AuthenticationForm() {
                 showOptionalFields: false
               }
             }}
-            forceRedirectUrl="/dashboard"
           />
         ) : (
           <SignIn 
@@ -77,7 +76,6 @@ export function AuthenticationForm() {
                 showOptionalFields: false
               }
             }}
-            forceRedirectUrl="/dashboard"
           />
         )}
         
