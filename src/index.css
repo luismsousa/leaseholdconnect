@@ -41,3 +41,73 @@ body {
 .auth-button {
   @apply w-full px-4 py-3 rounded-md bg-blue-600 text-white font-semibold hover:bg-blue-700 transition-colors shadow-sm hover:shadow disabled:opacity-50 disabled:cursor-not-allowed;
 }
+
+/* Stripe button styling */
+stripe-buy-button {
+  width: 100% !important;
+  display: block !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+}
+
+stripe-buy-button::part(button) {
+  width: 100% !important;
+  height: 48px !important;
+  border-radius: 8px !important;
+  font-weight: 600 !important;
+  font-size: 16px !important;
+  max-width: 100% !important;
+  box-sizing: border-box !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  text-align: center !important;
+  padding: 12px 24px !important;
+}
+
+/* Ensure the container also respects the width and centers content */
+.stripe-button-container {
+  width: 100% !important;
+  max-width: 100% !important;
+  overflow: hidden !important;
+  display: flex !important;
+  justify-content: center !important;
+  align-items: center !important;
+}
+
+/* Additional styling to ensure text centering within the button */
+stripe-buy-button::part(button) span {
+  text-align: center !important;
+  width: 100% !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+/* Override any internal Stripe button styling */
+stripe-buy-button::part(button) div {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 100% !important;
+  text-align: center !important;
+}
+
+/* Ensure the button text container is centered */
+stripe-buy-button::part(button) [data-testid="hosted-buy-button-text"] {
+  text-align: center !important;
+  width: 100% !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+}
+
+/* Target the specific text span within the button */
+stripe-buy-button::part(button) .BuyButton-ButtonText {
+  text-align: center !important;
+  width: 100% !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  margin: 0 auto !important;
+}

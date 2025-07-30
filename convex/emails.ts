@@ -49,7 +49,7 @@ export const sendInvitationEmail = internalAction({
               </ol>
             </div>
             <div style="text-align: center; margin: 20px 0;">
-              <a href="${process.env.SITE_URL || process.env.CONVEX_SITE_URL || 'https://your-app-url.com'}" style="background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">Join Association</a>
+              <a href="${process.env.SITE_URL || 'https://your-app-url.com'}" style="background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">Join Association</a>
             </div>
             <p style="margin-top: 30px; font-size: 12px; color: #666;">
               If you have any questions, please contact your association administrator.
@@ -135,7 +135,7 @@ export const sendWelcomeEmail = internalAction({
               </ul>
             </div>
             <div style="text-align: center; margin: 20px 0;">
-              <a href="${process.env.SITE_URL || process.env.CONVEX_SITE_URL || 'https://your-app-url.com'}" style="background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">Access Portal</a>
+              <a href="${process.env.SITE_URL || 'https://your-app-url.com'}" style="background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">Access Portal</a>
             </div>
             <p style="margin-top: 30px; font-size: 12px; color: #666;">
               If you have any questions, please contact your association administrator.
@@ -226,7 +226,7 @@ export const sendTestEmail = internalAction({
               <p><strong>Configuration Details:</strong></p>
               <ul>
                 <li>From Email: ${process.env.FROM_EMAIL || "noreply@yourdomain.com"}</li>
-                <li>Site URL: ${process.env.SITE_URL || process.env.CONVEX_SITE_URL || "https://your-app-url.com"}</li>
+                <li>Site URL: ${process.env.SITE_URL || "https://your-app-url.com"}</li>
               </ul>
             </div>
             <p>If you received this email, your email functionality is working correctly!</p>

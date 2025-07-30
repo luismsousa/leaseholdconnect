@@ -192,7 +192,7 @@ export const createAssociationAsAdmin = mutation({
             </ol>
           </div>
           <div style="text-align: center; margin: 20px 0;">
-            <a href="${process.env.SITE_URL || process.env.CONVEX_SITE_URL || 'https://your-app-url.com'}" style="background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">Access Portal</a>
+            <a href="${process.env.SITE_URL || 'https://your-app-url.com'}" style="background-color: #2563eb; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">Access Portal</a>
           </div>
         </div>
       `,

@@ -8,16 +8,26 @@ interface AssociationSelectorProps {
   compact?: boolean;
 }
 
-export function AssociationSelector({ selectedAssociationId, onAssociationChange, compact = false }: AssociationSelectorProps) {
+export function AssociationSelector({
+  selectedAssociationId,
+  onAssociationChange,
+  compact = false,
+}: AssociationSelectorProps) {
   const associations = useQuery(api.associations.getUserAssociations);
   const isPaasAdmin = useQuery(api.paasAdmin.isPaasAdmin);
-  const allAssociations = useQuery(api.paasAdmin.listAllAssociations, isPaasAdmin ? {} : "skip");
-  const setSelectedAssociation = useMutation(api.userPreferences.setSelectedAssociation);
+  const allAssociations = useQuery(
+    api.paasAdmin.listAllAssociations,
+    isPaasAdmin ? {} : "skip",
+  );
+  const setSelectedAssociation = useMutation(
+    api.userPreferences.setSelectedAssociation,
+  );
 
   const availableAssociations = isPaasAdmin ? allAssociations : associations;
 
   const handleAssociationChange = async (associationId: string) => {
-    const id = associationId === "" ? undefined : (associationId as Id<"associations">);
+    const id =
+      associationId === "" ? undefined : (associationId as Id<"associations">);
     await setSelectedAssociation({ associationId: id });
     onAssociationChange(id || null);
   };
@@ -41,7 +51,9 @@ export function AssociationSelector({ selectedAssociationId, onAssociationChange
         )}
         <select
           value={selectedAssociationId || ""}
-          onChange={(e) => handleAssociationChange(e.target.value)}
+          onChange={(e) => {
+            void handleAssociationChange(e.target.value);
+          }}
           className={`border border-slate-300 rounded-md px-3 py-1 text-sm focus:outline-none focus:ring-blue-500 focus:border-blue-500 ${
             compact ? "w-full" : "min-w-[200px]"
           }`}
@@ -56,11 +68,18 @@ export function AssociationSelector({ selectedAssociationId, onAssociationChange
                 {association.name}
                 {isPaasAdmin && (
                   <>
-                    {" "}({association.subscriptionTier} - {association.subscriptionStatus})
-                    {"memberCount" in association && association.memberCount !== undefined && ` - ${association.memberCount} members`}
+                    {" "}
+                    ({association.subscriptionTier} -{" "}
+                    {association.subscriptionStatus})
+                    {"memberCount" in association &&
+                      association.memberCount !== undefined &&
+                      ` - ${association.memberCount} members`}
                   </>
                 )}
-                {!isPaasAdmin && "role" in association && association.role && ` (${association.role})`}
+                {!isPaasAdmin &&
+                  "role" in association &&
+                  association.role &&
+                  ` (${association.role})`}
               </option>
             );
           })}
