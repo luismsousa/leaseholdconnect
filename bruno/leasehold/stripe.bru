@@ -5,7 +5,142 @@ meta {
 }
 
 post {
-  url: https://dazzling-anaconda-860.convex.cloud/stripe
-  body: none
+  url: https://dazzling-anaconda-860.convex.site/stripe
+  body: json
   auth: inherit
+}
+
+body:json {
+  {
+    "id": "evt_1RqbMkGjL5BvrqgGKTFpePUo",
+    "object": "event",
+    "api_version": "2025-06-30.basil",
+    "created": 1753887146,
+    "data": {
+      "object": {
+        "id": "cs_test_a1RXYjKzVhLXh76wZvJ5eEU5Gyn2onOTnDK7tnriFT217WoA9BwWrqI5BX",
+        "object": "checkout.session",
+        "adaptive_pricing": null,
+        "after_expiration": null,
+        "allow_promotion_codes": false,
+        "amount_subtotal": 2900,
+        "amount_total": 2900,
+        "automatic_tax": {
+          "enabled": false,
+          "liability": null,
+          "provider": null,
+          "status": null
+        },
+        "billing_address_collection": "required",
+        "cancel_url": "https://stripe.com",
+        "client_reference_id": "user_user_30TAkYBZIoc9dQl7HeIBEZK8TDD_1753887107728",
+        "client_secret": null,
+        "collected_information": {
+          "shipping_details": null
+        },
+        "consent": null,
+        "consent_collection": {
+          "payment_method_reuse_agreement": null,
+          "promotions": "none",
+          "terms_of_service": "none"
+        },
+        "created": 1753887110,
+        "currency": "gbp",
+        "currency_conversion": null,
+        "custom_fields": [],
+        "custom_text": {
+          "after_submit": null,
+          "shipping_address": null,
+          "submit": null,
+          "terms_of_service_acceptance": null
+        },
+        "customer": "cus_Sm9gXatoWPDclz",
+        "customer_creation": "if_required",
+        "customer_details": {
+          "address": {
+            "city": "Northampton",
+            "country": "GB",
+            "line1": "The Pickerings",
+            "line2": null,
+            "postal_code": "NN6 9XA",
+            "state": null
+          },
+          "email": "luis.m.sousa@outlook.pt",
+          "name": "luis",
+          "phone": null,
+          "tax_exempt": "none",
+          "tax_ids": []
+        },
+        "customer_email": "luis.m.sousa@outlook.pt",
+        "discounts": [],
+        "expires_at": 1753973510,
+        "invoice": "in_1RqbMhGjL5BvrqgGNxfhJF1H",
+        "invoice_creation": null,
+        "livemode": false,
+        "locale": "en-GB",
+        "metadata": {},
+        "mode": "subscription",
+        "origin_context": null,
+        "payment_intent": null,
+        "payment_link": "plink_1RqZgZGjL5BvrqgGCx2y8jkg",
+        "payment_method_collection": "always",
+        "payment_method_configuration_details": {
+          "id": "pmc_1RqZZ8GjL5BvrqgGdSd4txOp",
+          "parent": null
+        },
+        "payment_method_options": {
+          "card": {
+            "request_three_d_secure": "automatic"
+          }
+        },
+        "payment_method_types": [
+          "card",
+          "link",
+          "paypal",
+          "revolut_pay",
+          "amazon_pay"
+        ],
+        "payment_status": "paid",
+        "permissions": null,
+        "phone_number_collection": {
+          "enabled": false
+        },
+        "recovered_from": null,
+        "saved_payment_method_options": {
+          "allow_redisplay_filters": [
+            "always"
+          ],
+          "payment_method_remove": "disabled",
+          "payment_method_save": null
+        },
+        "setup_intent": null,
+        "shipping_address_collection": null,
+        "shipping_cost": null,
+        "shipping_options": [],
+        "status": "complete",
+        "submit_type": "auto",
+        "subscription": "sub_1RqbMjGjL5BvrqgGLPlNLYgJ",
+        "success_url": "http://localhost:5173/dashboard",
+        "tax_id_collection": {
+          "enabled": true,
+          "required": "never"
+        },
+        "total_details": {
+          "amount_discount": 0,
+          "amount_shipping": 0,
+          "amount_tax": 0
+        },
+        "ui_mode": "hosted",
+        "url": null,
+        "wallet_options": null
+      }
+    },
+    "livemode": false,
+    "pending_webhooks": 1,
+    "request": {
+      "id": null,
+      "idempotency_key": null
+    },
+    "type": "checkout.session.completed"
+  }
 }

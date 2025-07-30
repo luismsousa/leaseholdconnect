@@ -1,12 +1,14 @@
 import { SignInButton, useUser } from '@clerk/clerk-react';
 import { useState, useEffect } from 'react';
 import { StripePaymentButton } from './StripePaymentButton';
+import { Id } from '../../convex/_generated/dataModel';
 
 interface ProTierButtonProps {
   className?: string;
+  selectedAssociationId?: Id<"associations"> | null;
 }
 
-export function ProTierButton({ className }: ProTierButtonProps) {
+export function ProTierButton({ className, selectedAssociationId }: ProTierButtonProps) {
   const { isSignedIn } = useUser();
   const [showPayment, setShowPayment] = useState(false);
 
@@ -29,7 +31,8 @@ export function ProTierButton({ className }: ProTierButtonProps) {
     return (
       <StripePaymentButton 
         className={className} 
-        isSignedIn={true} 
+        isSignedIn={true}
+        selectedAssociationId={selectedAssociationId}
       />
     );
   }
@@ -39,7 +42,8 @@ export function ProTierButton({ className }: ProTierButtonProps) {
     return (
       <StripePaymentButton 
         className={className} 
-        isSignedIn={true} 
+        isSignedIn={true}
+        selectedAssociationId={selectedAssociationId}
       />
     );
   }

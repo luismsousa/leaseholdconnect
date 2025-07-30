@@ -1,6 +1,9 @@
 import { SignInButton, useUser, useClerk } from '@clerk/clerk-react';
 import { Link } from 'react-router-dom';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { useQuery } from 'convex/react';
+import { api } from '../../convex/_generated/api';
+import { Id } from '../../convex/_generated/dataModel';
 import { ContactFormModal } from './ContactFormModal';
 import { StripePaymentButton } from './StripePaymentButton';
 import { ProTierButton } from './ProTierButton';
@@ -9,6 +12,32 @@ export function LandingPage() {
   const { isSignedIn } = useUser();
   const { signOut } = useClerk();
   const [showContactForm, setShowContactForm] = useState(false);
+  const [selectedAssociationId, setSelectedAssociationId] = useState<Id<"associations"> | null>(null);
+
+  // Get user's associations if signed in
+  const userAssociations = useQuery(
+    api.associations.getUserAssociations,
+    isSignedIn ? {} : "skip"
+  );
+
+  // Get user preferences to find selected association
+  const userPreferences = useQuery(
+    api.userPreferences.getUserPreferences,
+    isSignedIn ? {} : "skip"
+  );
+
+  // Set selected association from preferences or first available association
+  useEffect(() => {
+    if (isSignedIn && userPreferences?.selectedAssociationId) {
+      setSelectedAssociationId(userPreferences.selectedAssociationId);
+    } else if (isSignedIn && userAssociations && userAssociations.length > 0) {
+      // Use first association if none is selected
+      const firstAssociation = userAssociations[0];
+      if (firstAssociation) {
+        setSelectedAssociationId(firstAssociation._id);
+      }
+    }
+  }, [isSignedIn, userPreferences, userAssociations]);
 
   const handleSignOut = () => {
     void signOut({ redirectUrl: "/" });
@@ -282,7 +311,10 @@ export function LandingPage() {
                     Priority support
                   </li>
                 </ul>
-                <ProTierButton className="w-full  text-white py-3 px-6 rounded-lg font-semibold transition-colors" />
+                <ProTierButton 
+                  selectedAssociationId={selectedAssociationId} 
+                  className="w-full  text-white py-3 px-6 rounded-lg font-semibold transition-colors" 
+                />
               </div>
             </div>
 

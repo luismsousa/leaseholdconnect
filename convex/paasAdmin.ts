@@ -59,7 +59,7 @@ export const getCurrentPaasAdmin = query({
 export const listAllAssociations = query({
   args: {
     status: v.optional(v.union(v.literal("active"), v.literal("inactive"), v.literal("trial"), v.literal("suspended"))),
-    tier: v.optional(v.union(v.literal("free"), v.literal("basic"), v.literal("premium"))),
+    tier: v.optional(v.union(v.literal("free"), v.literal("pro"), v.literal("enterprise"))),
   },
   handler: async (ctx, args) => {
     await requirePaasAdmin(ctx);
@@ -134,7 +134,7 @@ export const createAssociationAsAdmin = mutation({
     contactPhone: v.optional(v.string()),
     website: v.optional(v.string()),
     ownerEmail: v.string(),
-    subscriptionTier: v.union(v.literal("free"), v.literal("basic"), v.literal("premium")),
+    subscriptionTier: v.union(v.literal("free"), v.literal("pro"), v.literal("enterprise")),
     subscriptionStatus: v.union(v.literal("active"), v.literal("inactive"), v.literal("trial")),
   },
   handler: async (ctx, args) => {
@@ -151,8 +151,8 @@ export const createAssociationAsAdmin = mutation({
       settings: {
         allowSelfRegistration: false,
         requireAdminApproval: true,
-        maxMembers: args.subscriptionTier === "free" ? 50 : args.subscriptionTier === "basic" ? 200 : undefined,
-        maxUnits: args.subscriptionTier === "free" ? 25 : args.subscriptionTier === "basic" ? 100 : undefined,
+        maxMembers: args.subscriptionTier === "free" ? 50 : args.subscriptionTier === "pro" ? 200 : undefined,
+        maxUnits: args.subscriptionTier === "free" ? 25 : args.subscriptionTier === "pro" ? 100 : undefined,
       },
       createdBy: userId,
       createdAt: now,
@@ -365,7 +365,7 @@ export const reactivateAssociation = mutation({
 export const updateAssociationSubscription = mutation({
   args: {
     associationId: v.id("associations"),
-    tier: v.union(v.literal("free"), v.literal("basic"), v.literal("premium")),
+    tier: v.union(v.literal("free"), v.literal("pro"), v.literal("enterprise")),
     status: v.union(v.literal("active"), v.literal("inactive"), v.literal("trial")),
   },
   handler: async (ctx, args) => {
@@ -413,8 +413,8 @@ export const getPlatformStats = query({
 
     const tierCounts = {
       free: associations.filter(a => a.subscriptionTier === "free").length,
-      basic: associations.filter(a => a.subscriptionTier === "basic").length,
-      premium: associations.filter(a => a.subscriptionTier === "premium").length,
+      pro: associations.filter(a => a.subscriptionTier === "pro").length,
+      enterprise: associations.filter(a => a.subscriptionTier === "enterprise").length,
     };
 
     return {

@@ -1,16 +1,30 @@
 import React, { useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useUser } from '@clerk/clerk-react';
+import { useQuery } from 'convex/react';
+import { api } from '../../convex/_generated/api';
+import { Id } from '../../convex/_generated/dataModel';
 
 interface StripePaymentButtonProps {
   className?: string;
   isSignedIn: boolean;
+  selectedAssociationId?: Id<"associations"> | null;
 }
 
-export function StripePaymentButton({ className, isSignedIn }: StripePaymentButtonProps) {
+export function StripePaymentButton({ 
+  className, 
+  isSignedIn, 
+  selectedAssociationId 
+}: StripePaymentButtonProps) {
   const buttonRef = useRef<HTMLDivElement>(null);
   const navigate = useNavigate();
   const { user } = useUser();
+
+  // Get current association details to check subscription status
+  const currentAssociation = useQuery(
+    api.associations.getAssociation,
+    selectedAssociationId ? { associationId: selectedAssociationId } : "skip"
+  );
 
   useEffect(() => {
     // Listen for Stripe payment success events
@@ -50,8 +64,25 @@ export function StripePaymentButton({ className, isSignedIn }: StripePaymentButt
     );
   }
 
+  // Check if association already has an active subscription
+  if (currentAssociation && currentAssociation.subscriptionStatus === "active") {
+    return (
+      <div className={className}>
+        <div className="w-full bg-green-100 text-green-800 py-3 px-6 rounded-lg font-semibold">
+          ✓ Active {currentAssociation.subscriptionTier.toUpperCase()} Subscription
+        </div>
+      </div>
+    );
+  }
+
   // Generate a unique client reference ID for tracking this subscription attempt
-  const clientReferenceId = user ? `user_${user.id}_${Date.now()}` : `anonymous_${Date.now()}`;
+  // Format: ${userId}_${associationId}_${timestamp}
+  // user.id from Clerk already contains "user_" prefix, so we don't need to add it again
+  const clientReferenceId = user && selectedAssociationId 
+    ? `${user.id}_${selectedAssociationId}_${Date.now()}` 
+    : user 
+    ? `${user.id}_${Date.now()}` 
+    : `anonymous_${Date.now()}`;
   
   // Get user's email for pre-filling the payment form
   const customerEmail = user?.emailAddresses?.[0]?.emailAddress || '';

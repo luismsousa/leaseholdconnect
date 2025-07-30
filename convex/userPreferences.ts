@@ -5,6 +5,36 @@ import { getClerkUserId } from "./clerkHelpers";
 // Get user preferences
 export const getUserPreferences = query({
   args: {},
+  returns: v.union(
+    v.object({
+      userId: v.string(),
+      selectedAssociationId: v.optional(v.id("associations")),
+      preferences: v.optional(
+        v.object({
+          theme: v.optional(v.string()),
+          notifications: v.optional(v.boolean()),
+          language: v.optional(v.string()),
+        }),
+      ),
+      updatedAt: v.number(),
+      selectedAssociation: v.optional(v.object({
+        _id: v.id("associations"),
+        name: v.string(),
+        subscriptionTier: v.union(
+          v.literal("free"),
+          v.literal("pro"),
+          v.literal("enterprise"),
+        ),
+        subscriptionStatus: v.union(
+          v.literal("active"),
+          v.literal("inactive"),
+          v.literal("trial"),
+          v.literal("suspended"),
+        ),
+      })),
+    }),
+    v.null()
+  ),
   handler: async (ctx) => {
     const userId = await getClerkUserId(ctx);
     if (!userId) {
@@ -16,7 +46,31 @@ export const getUserPreferences = query({
       .withIndex("by_user", (q) => q.eq("userId", userId))
       .first();
 
-    return preferences;
+    if (!preferences) {
+      return null;
+    }
+
+    // Get selected association details if available
+    let selectedAssociation = undefined;
+    if (preferences.selectedAssociationId) {
+      const association = await ctx.db.get(preferences.selectedAssociationId);
+      if (association) {
+        selectedAssociation = {
+          _id: association._id,
+          name: association.name,
+          subscriptionTier: association.subscriptionTier,
+          subscriptionStatus: association.subscriptionStatus,
+        };
+      }
+    }
+
+    return {
+      userId: preferences.userId,
+      selectedAssociationId: preferences.selectedAssociationId,
+      preferences: preferences.preferences,
+      updatedAt: preferences.updatedAt,
+      selectedAssociation,
+    };
   },
 });
 

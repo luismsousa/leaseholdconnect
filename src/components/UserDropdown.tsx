@@ -27,6 +27,12 @@ export function UserDropdown({
     api.userPreferences.setSelectedAssociation,
   );
 
+  // Get current association details to show subscription tier
+  const currentAssociation = useQuery(
+    api.associations.getAssociation,
+    selectedAssociationId ? { associationId: selectedAssociationId } : "skip"
+  );
+
   const availableAssociations = isPaasAdmin ? allAssociations : associations;
 
   useEffect(() => {
@@ -57,6 +63,28 @@ export function UserDropdown({
     onAssociationChange(id || null);
   };
 
+  // Helper function to get subscription tier display
+  const getSubscriptionTierDisplay = (tier: string, status: string) => {
+    const tierColors = {
+      free: "text-gray-600",
+      pro: "text-blue-600",
+      enterprise: "text-purple-600",
+    };
+    
+    const statusColors = {
+      active: "text-green-600",
+      inactive: "text-red-600",
+      trial: "text-orange-600",
+      suspended: "text-red-600",
+    };
+
+    return (
+      <span className={`text-xs font-medium ${tierColors[tier as keyof typeof tierColors] || tierColors.free}`}>
+        {tier.toUpperCase()} - {status.toUpperCase()}
+      </span>
+    );
+  };
+
   if (!user) return null;
 
   return (
@@ -77,6 +105,11 @@ export function UserDropdown({
           {isPaasAdmin && (
             <div className="text-xs text-purple-600 font-medium">
               PaaS Admin
+            </div>
+          )}
+          {currentAssociation && (
+            <div className="text-xs text-slate-500">
+              {getSubscriptionTierDisplay(currentAssociation.subscriptionTier, currentAssociation.subscriptionStatus)}
             </div>
           )}
         </div>
@@ -106,6 +139,11 @@ export function UserDropdown({
             <div className="text-xs text-slate-500">
               {user?.emailAddresses?.[0]?.emailAddress}
             </div>
+            {currentAssociation && (
+              <div className="mt-1">
+                {getSubscriptionTierDisplay(currentAssociation.subscriptionTier, currentAssociation.subscriptionStatus)}
+              </div>
+            )}
           </div>
 
           {/* Association Selector */}

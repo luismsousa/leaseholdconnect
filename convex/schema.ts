@@ -45,8 +45,8 @@ const applicationTables = {
     // Subscription/billing info
     subscriptionTier: v.union(
       v.literal("free"),
-      v.literal("basic"),
-      v.literal("premium"),
+      v.literal("pro"),
+      v.literal("enterprise"),
     ),
     subscriptionStatus: v.union(
       v.literal("active"),
@@ -55,6 +55,14 @@ const applicationTables = {
       v.literal("suspended"),
     ),
     trialEndsAt: v.optional(v.number()),
+    // Stripe subscription details
+    stripeCustomerId: v.optional(v.string()),
+    stripeSubscriptionId: v.optional(v.string()),
+    stripePriceId: v.optional(v.string()),
+    subscriptionStartDate: v.optional(v.number()),
+    subscriptionEndDate: v.optional(v.number()),
+    lastBillingDate: v.optional(v.number()),
+    nextBillingDate: v.optional(v.number()),
     // Settings
     settings: v.optional(
       v.object({
@@ -77,7 +85,9 @@ const applicationTables = {
     .index("by_name", ["name"])
     .index("by_creator", ["createdBy"])
     .index("by_status_and_subscription", ["isActive", "subscriptionStatus"])
-    .index("by_subscription_tier", ["subscriptionTier"]),
+    .index("by_subscription_tier", ["subscriptionTier"])
+    .index("by_stripe_customer", ["stripeCustomerId"])
+    .index("by_stripe_subscription", ["stripeSubscriptionId"]),
 
   associationMembers: defineTable({
     associationId: v.id("associations"),

@@ -1,5 +1,5 @@
 import { v } from "convex/values";
-import { query, mutation, internalMutation } from "./_generated/server";
+import { query, mutation, internalMutation, internalQuery } from "./_generated/server";
 import { getClerkUserId, requireClerkAuth } from "./clerkHelpers";
 import { Id } from "./_generated/dataModel";
 
@@ -29,7 +29,21 @@ export const getUserAssociations = query({
   },
 });
 
-// Get association details
+// Get association details (internal, no auth required)
+export const getAssociationInternal = internalQuery({
+  args: {
+    associationId: v.id("associations"),
+  },
+  handler: async (ctx, args) => {
+    const association = await ctx.db.get(args.associationId);
+    if (!association) {
+      return null;
+    }
+    return association;
+  },
+});
+
+// Get association details (requires authentication)
 export const getAssociation = query({
   args: { associationId: v.id("associations") },
   handler: async (ctx, args) => {
