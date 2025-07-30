@@ -1,6 +1,5 @@
 import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
-import { authTables } from "@convex-dev/auth/server";
 
 const applicationTables = {
   // Users table for Clerk integration
@@ -20,7 +19,11 @@ const applicationTables = {
   // PaaS Admin table for platform administrators
   paasAdmins: defineTable({
     userId: v.string(), // Clerk user ID
-    role: v.union(v.literal("super_admin"), v.literal("support"), v.literal("billing")),
+    role: v.union(
+      v.literal("super_admin"),
+      v.literal("support"),
+      v.literal("billing"),
+    ),
     permissions: v.array(v.string()),
     createdAt: v.number(),
     createdBy: v.optional(v.string()), // Clerk user ID
@@ -40,16 +43,35 @@ const applicationTables = {
     contactPhone: v.optional(v.string()),
     website: v.optional(v.string()),
     // Subscription/billing info
-    subscriptionTier: v.union(v.literal("free"), v.literal("basic"), v.literal("premium")),
-    subscriptionStatus: v.union(v.literal("active"), v.literal("inactive"), v.literal("trial"), v.literal("suspended")),
+    subscriptionTier: v.union(
+      v.literal("free"),
+      v.literal("pro"),
+      v.literal("enterprise"),
+    ),
+    subscriptionStatus: v.union(
+      v.literal("active"),
+      v.literal("inactive"),
+      v.literal("trial"),
+      v.literal("suspended"),
+    ),
     trialEndsAt: v.optional(v.number()),
+    // Stripe subscription details
+    stripeCustomerId: v.optional(v.string()),
+    stripeSubscriptionId: v.optional(v.string()),
+    stripePriceId: v.optional(v.string()),
+    subscriptionStartDate: v.optional(v.number()),
+    subscriptionEndDate: v.optional(v.number()),
+    lastBillingDate: v.optional(v.number()),
+    nextBillingDate: v.optional(v.number()),
     // Settings
-    settings: v.optional(v.object({
-      allowSelfRegistration: v.boolean(),
-      requireAdminApproval: v.boolean(),
-      maxMembers: v.optional(v.number()),
-      maxUnits: v.optional(v.number()),
-    })),
+    settings: v.optional(
+      v.object({
+        allowSelfRegistration: v.boolean(),
+        requireAdminApproval: v.boolean(),
+        maxMembers: v.optional(v.number()),
+        maxUnits: v.optional(v.number()),
+      }),
+    ),
     // Metadata
     createdBy: v.string(), // Clerk user ID
     createdAt: v.number(),
@@ -63,13 +85,19 @@ const applicationTables = {
     .index("by_name", ["name"])
     .index("by_creator", ["createdBy"])
     .index("by_status_and_subscription", ["isActive", "subscriptionStatus"])
-    .index("by_subscription_tier", ["subscriptionTier"]),
+    .index("by_subscription_tier", ["subscriptionTier"])
+    .index("by_stripe_customer", ["stripeCustomerId"])
+    .index("by_stripe_subscription", ["stripeSubscriptionId"]),
 
   associationMembers: defineTable({
     associationId: v.id("associations"),
     userId: v.string(), // Clerk user ID
     role: v.union(v.literal("owner"), v.literal("admin"), v.literal("member")),
-    status: v.union(v.literal("active"), v.literal("inactive"), v.literal("invited")),
+    status: v.union(
+      v.literal("active"),
+      v.literal("inactive"),
+      v.literal("invited"),
+    ),
     invitedBy: v.optional(v.string()), // Clerk user ID
     invitedAt: v.optional(v.number()),
     joinedAt: v.optional(v.number()),
@@ -86,14 +114,15 @@ const applicationTables = {
   userPreferences: defineTable({
     userId: v.string(), // Clerk user ID
     selectedAssociationId: v.optional(v.id("associations")),
-    preferences: v.optional(v.object({
-      theme: v.optional(v.string()),
-      notifications: v.optional(v.boolean()),
-      language: v.optional(v.string()),
-    })),
+    preferences: v.optional(
+      v.object({
+        theme: v.optional(v.string()),
+        notifications: v.optional(v.boolean()),
+        language: v.optional(v.string()),
+      }),
+    ),
     updatedAt: v.number(),
-  })
-    .index("by_user", ["userId"]),
+  }).index("by_user", ["userId"]),
 
   members: defineTable({
     associationId: v.id("associations"),
@@ -101,7 +130,11 @@ const applicationTables = {
     name: v.string(),
     unit: v.optional(v.string()),
     role: v.union(v.literal("admin"), v.literal("member")),
-    status: v.union(v.literal("active"), v.literal("inactive"), v.literal("invited")),
+    status: v.union(
+      v.literal("active"),
+      v.literal("inactive"),
+      v.literal("invited"),
+    ),
     invitedBy: v.optional(v.string()), // Clerk user ID
     invitedAt: v.optional(v.number()),
     joinedAt: v.optional(v.number()),
@@ -147,7 +180,11 @@ const applicationTables = {
     uploadedBy: v.id("members"),
     uploadedAt: v.number(),
     isPublic: v.boolean(),
-    visibilityType: v.union(v.literal("all"), v.literal("buildings"), v.literal("admin")),
+    visibilityType: v.union(
+      v.literal("all"),
+      v.literal("buildings"),
+      v.literal("admin"),
+    ),
     visibleToBuildings: v.optional(v.array(v.string())),
     downloadUrl: v.optional(v.string()),
     meetingId: v.optional(v.id("meetings")),
@@ -163,10 +200,21 @@ const applicationTables = {
     associationId: v.id("associations"),
     title: v.string(),
     description: v.string(),
-    type: v.union(v.literal("agm"), v.literal("egm"), v.literal("board"), v.literal("general")),
+    type: v.union(
+      v.literal("agm"),
+      v.literal("egm"),
+      v.literal("board"),
+      v.literal("general"),
+    ),
     scheduledDate: v.number(),
     location: v.string(),
-    status: v.union(v.literal("draft"), v.literal("scheduled"), v.literal("cancelled"), v.literal("completed")),
+    status: v.union(
+      v.literal("draft"),
+      v.literal("scheduled"),
+      v.literal("cancelled"),
+      v.literal("completed"),
+      v.literal("archived"),
+    ),
     createdBy: v.string(), // Clerk user ID
     createdAt: v.number(),
     updatedAt: v.number(),
@@ -176,15 +224,22 @@ const applicationTables = {
     inviteAllMembers: v.optional(v.boolean()),
     invitedUnits: v.optional(v.array(v.string())),
     // Meeting details
-    agenda: v.array(v.object({
-      id: v.string(),
-      title: v.string(),
-      description: v.optional(v.string()),
-      type: v.union(v.literal("discussion"), v.literal("voting"), v.literal("presentation"), v.literal("other")),
-      estimatedDuration: v.optional(v.number()), // in minutes
-      votingTopicId: v.optional(v.id("votingTopics")),
-      documentIds: v.optional(v.array(v.id("documents"))),
-    })),
+    agenda: v.array(
+      v.object({
+        id: v.string(),
+        title: v.string(),
+        description: v.optional(v.string()),
+        type: v.union(
+          v.literal("discussion"),
+          v.literal("voting"),
+          v.literal("presentation"),
+          v.literal("other"),
+        ),
+        estimatedDuration: v.optional(v.number()), // in minutes
+        votingTopicId: v.optional(v.id("votingTopics")),
+        documentIds: v.optional(v.array(v.id("documents"))),
+      }),
+    ),
     // Notifications
     notificationsSent: v.boolean(),
     remindersSent: v.boolean(),
@@ -203,7 +258,11 @@ const applicationTables = {
     associationId: v.id("associations"),
     meetingId: v.id("meetings"),
     memberId: v.id("members"),
-    status: v.union(v.literal("attending"), v.literal("not_attending"), v.literal("maybe")),
+    status: v.union(
+      v.literal("attending"),
+      v.literal("not_attending"),
+      v.literal("maybe"),
+    ),
     responseDate: v.number(),
     notes: v.optional(v.string()),
   })
@@ -222,16 +281,26 @@ const applicationTables = {
     createdAt: v.number(),
     startDate: v.number(),
     endDate: v.number(),
-    status: v.union(v.literal("draft"), v.literal("active"), v.literal("closed")),
+    status: v.union(
+      v.literal("draft"),
+      v.literal("active"),
+      v.literal("closed"),
+    ),
     allowMultipleVotes: v.boolean(),
-    visibilityType: v.optional(v.union(v.literal("all"), v.literal("units"), v.literal("admin"))),
+    visibilityType: v.optional(
+      v.union(v.literal("all"), v.literal("units"), v.literal("admin")),
+    ),
     visibleToUnits: v.optional(v.array(v.string())),
     meetingId: v.optional(v.id("meetings")),
   })
     .index("by_association", ["associationId"])
     .index("by_association_and_status", ["associationId", "status"])
     .index("by_association_and_creator", ["associationId", "createdBy"])
-    .index("by_association_and_dates", ["associationId", "startDate", "endDate"])
+    .index("by_association_and_dates", [
+      "associationId",
+      "startDate",
+      "endDate",
+    ])
     .index("by_association_and_meeting", ["associationId", "meetingId"]),
 
   votes: defineTable({
@@ -247,7 +316,7 @@ const applicationTables = {
     .index("by_member_and_topic", ["memberId", "topicId"]),
 
   auditLogs: defineTable({
-    associationId: v.id("associations"),
+    associationId: v.union(v.id("associations"), v.string()), // Allow system-level logs
     userId: v.string(), // Clerk user ID
     memberId: v.optional(v.id("members")),
     action: v.string(),
@@ -263,10 +332,36 @@ const applicationTables = {
     .index("by_association_and_user", ["associationId", "userId"])
     .index("by_association_and_member", ["associationId", "memberId"])
     .index("by_association_and_action", ["associationId", "action"])
-    .index("by_association_and_entity", ["associationId", "entityType", "entityId"]),
+    .index("by_association_and_entity", [
+      "associationId",
+      "entityType",
+      "entityId",
+    ]),
+
+  // Enterprise leads table for contact form submissions
+  leads: defineTable({
+    name: v.string(),
+    email: v.string(),
+    companyName: v.string(),
+    phoneNumber: v.string(),
+    message: v.string(),
+    status: v.union(
+      v.literal("new"),
+      v.literal("contacted"),
+      v.literal("qualified"),
+      v.literal("converted"),
+      v.literal("lost"),
+    ),
+    notes: v.optional(v.string()),
+    assignedTo: v.optional(v.string()), // Clerk user ID of PaaS admin
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_status", ["status"])
+    .index("by_created_at", ["createdAt"])
+    .index("by_assigned_to", ["assignedTo"]),
 };
 
 export default defineSchema({
-  ...authTables, // Keep for compatibility with locked auth.ts file
   ...applicationTables,
 });

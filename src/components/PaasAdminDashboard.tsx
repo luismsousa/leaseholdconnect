@@ -3,6 +3,9 @@ import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { toast } from "sonner";
 import { SignOutButton } from "../SignOutButton";
+import { posthog } from "posthog-js";
+import { Navigate } from "react-router-dom";
+import { LeadsTab } from "./LeadsTab";
 
 export function PaasAdminDashboard() {
   const paasAdmin = useQuery(api.paasAdmin.getCurrentPaasAdmin);
@@ -22,6 +25,7 @@ export function PaasAdminDashboard() {
   const [selectedAssociation, setSelectedAssociation] = useState<any>(null);
   const [showSubscriptionModal, setShowSubscriptionModal] = useState(false);
   const [showEditAdminsModal, setShowEditAdminsModal] = useState(false);
+  const [activeTab, setActiveTab] = useState<"associations" | "leads">("associations");
 
   const handleSuspend = async (associationId: string, reason: string) => {
     try {
@@ -29,6 +33,7 @@ export function PaasAdminDashboard() {
       toast.success("Association suspended successfully");
     } catch (error) {
       toast.error("Failed to suspend association");
+      posthog.captureException(error)
     }
   };
 
@@ -38,6 +43,7 @@ export function PaasAdminDashboard() {
       toast.success("Association reactivated successfully");
     } catch (error) {
       toast.error("Failed to reactivate association");
+      posthog.captureException(error)
     }
   };
 
@@ -47,17 +53,23 @@ export function PaasAdminDashboard() {
       toast.success("Migration completed successfully");
     } catch (error) {
       toast.error("Migration failed: " + (error as Error).message);
+      posthog.captureException(error)
     }
   };
 
-  if (!paasAdmin) {
+  // Show loading while checking PaaS admin status
+  if (paasAdmin === undefined) {
     return (
-      <div className="text-center py-12">
-        <div className="text-slate-400 text-6xl mb-4">🔒</div>
-        <h3 className="text-lg font-medium text-slate-900 mb-2">Access Denied</h3>
-        <p className="text-slate-600">You don't have PaaS admin privileges.</p>
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
       </div>
     );
+  }
+
+  // This component should only be rendered for PaaS admins due to the ProtectedPaasAdminRoute wrapper
+  // but we'll keep this check as a safety measure
+  if (paasAdmin === null) {
+    return <Navigate to="/dashboard" replace />;
   }
 
   return (
@@ -72,7 +84,7 @@ export function PaasAdminDashboard() {
         </div>
         <div className="flex items-center space-x-4">
           <button
-            onClick={handleRunMigration}
+            onClick={() => void handleRunMigration()}
             className="px-3 py-1.5 text-sm font-medium text-white bg-orange-600 rounded-md hover:bg-orange-700"
           >
             🔧 Fix User IDs & Tokens
@@ -161,7 +173,38 @@ export function PaasAdminDashboard() {
         </div>
       )}
 
-      {/* Filters */}
+      {/* Tab Navigation */}
+      <div className="bg-white shadow rounded-lg">
+        <div className="border-b border-slate-200">
+          <nav className="-mb-px flex space-x-8 px-6">
+            <button
+              onClick={() => setActiveTab("associations")}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                activeTab === "associations"
+                  ? "border-blue-500 text-blue-600"
+                  : "border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300"
+              }`}
+            >
+              Associations
+            </button>
+            <button
+              onClick={() => setActiveTab("leads")}
+              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+                activeTab === "leads"
+                  ? "border-blue-500 text-blue-600"
+                  : "border-transparent text-slate-500 hover:text-slate-700 hover:border-slate-300"
+              }`}
+            >
+              Enterprise Leads
+            </button>
+          </nav>
+        </div>
+      </div>
+
+      {/* Tab Content */}
+      {activeTab === "associations" && (
+        <>
+          {/* Filters */}
       <div className="bg-white shadow rounded-lg p-6">
         <h3 className="text-lg font-medium text-slate-900 mb-4">Filter Associations</h3>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -283,7 +326,7 @@ export function PaasAdminDashboard() {
                     </button>
                     {association.subscriptionStatus === "suspended" ? (
                       <button
-                        onClick={() => handleReactivate(association._id)}
+                        onClick={() => void handleReactivate(association._id)}
                         className="px-3 py-1 text-sm font-medium text-green-700 bg-green-100 rounded-md hover:bg-green-200"
                       >
                         Reactivate
@@ -308,6 +351,12 @@ export function PaasAdminDashboard() {
           )}
         </div>
       </div>
+        </>
+      )}
+
+      {activeTab === "leads" && (
+        <LeadsTab />
+      )}
 
       {/* Subscription Modal */}
       {showSubscriptionModal && selectedAssociation && (
@@ -575,6 +624,8 @@ function SubscriptionModal({ association, onClose, onUpdate }: any) {
       })
       .catch((error: unknown) => {
         toast.error("Failed to update subscription");
+        posthog.captureException(error)
+        
       })
       .finally(() => {
         setUpdating(false);
@@ -654,6 +705,7 @@ function CreateAdminModal({ onClose }: { onClose: () => void }) {
       })
       .catch((error: unknown) => {
         toast.error("Failed to create PaaS admin");
+        posthog.captureException(error)
       })
       .finally(() => {
         setCreating(false);

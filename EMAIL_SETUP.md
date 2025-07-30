@@ -30,9 +30,9 @@ Edit your `.env.local` file and update the following variables:
 
 ```bash
 # Email Configuration
-RESEND_API_KEY=re_your_actual_api_key_here
+RESEND_API_TOKEN=re_your_actual_api_key_here
 FROM_EMAIL=noreply@yourdomain.com
-CONVEX_SITE_URL=https://your-app-url.com
+SITE_URL=https://your-app-url.com
 ```
 
 **Important Notes:**
@@ -75,16 +75,32 @@ The email templates are designed with:
 
 | Variable | Description | Example |
 |----------|-------------|---------|
-| `RESEND_API_KEY` | Your Resend API key | `re_1234567890abcdef` |
+| `RESEND_API_TOKEN` | Your Resend API key | `re_1234567890abcdef` |
 | `FROM_EMAIL` | Sender email address | `noreply@yourdomain.com` |
-| `CONVEX_SITE_URL` | Your application URL | `https://your-app.com` |
+| `SITE_URL` | Your application URL | `https://your-app.com` |
+
+### 6. Domain Verification Requirements
+
+**Important**: Resend requires domain verification to send emails to recipients other than your own email address.
+
+#### Current Status:
+- ✅ API Token: Valid and working
+- ✅ Domain Verification: `email.leaseholdconnect.com` is verified
+- ✅ Custom Domain: Using `noreply@email.leaseholdconnect.com`
+- ✅ Email Functionality: All email functions working correctly
+
+#### Testing:
+- ✅ Domain verification is complete
+- ✅ Can send emails to any recipient using `noreply@email.leaseholdconnect.com`
+- ✅ All email functionality working correctly
+- ✅ No fallback logic needed - using verified domain directly
 
 ### 7. Troubleshooting
 
 #### Common Issues:
 
 1. **"Missing API key" error**
-   - Make sure `RESEND_API_KEY` is set in your `.env.local` file
+   - Make sure `RESEND_API_TOKEN` is set in your `.env.local` file
    - Ensure the API key starts with `re_`
 
 2. **"Unauthorized" error**
@@ -100,6 +116,19 @@ The email templates are designed with:
    - Make sure your domain is properly verified
    - Set up SPF, DKIM, and DMARC records as recommended by Resend
    - Use a professional `FROM_EMAIL` address
+
+5. **Domain verification errors**
+   - If you see errors about domain verification, the system will automatically fallback to using Resend's default domain (`onboarding@resend.dev`)
+   - To fix this permanently, verify your domain in the Resend dashboard
+   - Add the following DNS records for your domain:
+     - SPF record: `v=spf1 include:_spf.resend.com ~all`
+     - DKIM record (provided by Resend)
+     - DMARC record: `v=DMARC1; p=quarantine; rua=mailto:dmarc@yourdomain.com`
+
+6. **Custom base URL issues**
+   - If you have `RESEND_BASE_URL` set, it might cause conflicts
+   - Remove this environment variable if you're experiencing issues
+   - Use the standard Resend API endpoints instead
 
 ### 8. Security Best Practices
 

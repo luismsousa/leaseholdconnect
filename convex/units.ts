@@ -4,7 +4,10 @@ import { getClerkUserId } from "./clerkHelpers";
 import { Id } from "./_generated/dataModel";
 
 // Helper function to check if user is admin of association
-async function requireAssociationAdmin(ctx: any, associationId: Id<"associations">) {
+async function requireAssociationAdmin(
+  ctx: any,
+  associationId: Id<"associations">,
+) {
   const userId = await getClerkUserId(ctx);
   if (!userId) {
     throw new Error("Authentication required");
@@ -12,13 +15,16 @@ async function requireAssociationAdmin(ctx: any, associationId: Id<"associations
 
   const membership = await ctx.db
     .query("associationMembers")
-    .withIndex("by_association_and_user", (q: any) => 
-      q.eq("associationId", associationId).eq("userId", userId)
+    .withIndex("by_association_and_user", (q: any) =>
+      q.eq("associationId", associationId).eq("userId", userId),
     )
     .filter((q: any) => q.eq(q.field("status"), "active"))
     .first();
 
-  if (!membership || (membership.role !== "owner" && membership.role !== "admin")) {
+  if (
+    !membership ||
+    (membership.role !== "owner" && membership.role !== "admin")
+  ) {
     throw new Error("Admin access required");
   }
 
@@ -27,22 +33,42 @@ async function requireAssociationAdmin(ctx: any, associationId: Id<"associations
 
 // List units for an association
 export const list = query({
-  args: { 
+  args: {
     associationId: v.id("associations"),
     building: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
-    await requireAssociationAdmin(ctx, args.associationId);
+    // Check if user is a member of the association (any role)
+    const userId = await getClerkUserId(ctx);
+    if (!userId) {
+      throw new Error("Authentication required");
+    }
+
+    const membership = await ctx.db
+      .query("associationMembers")
+      .withIndex("by_association_and_user", (q: any) =>
+        q.eq("associationId", args.associationId).eq("userId", userId),
+      )
+      .filter((q: any) => q.eq(q.field("status"), "active"))
+      .first();
+
+    if (!membership) {
+      throw new Error("You must be a member of this association to view units");
+    }
 
     let query = ctx.db
       .query("units")
-      .withIndex("by_association", (q) => q.eq("associationId", args.associationId));
+      .withIndex("by_association", (q) =>
+        q.eq("associationId", args.associationId),
+      );
 
     if (args.building) {
       query = ctx.db
         .query("units")
-        .withIndex("by_association_and_building", (q) => 
-          q.eq("associationId", args.associationId).eq("building", args.building)
+        .withIndex("by_association_and_building", (q) =>
+          q
+            .eq("associationId", args.associationId)
+            .eq("building", args.building),
         );
     }
 
@@ -52,13 +78,15 @@ export const list = query({
 
 // Get units for member assignment (no admin check needed)
 export const listForMembers = query({
-  args: { 
+  args: {
     associationId: v.id("associations"),
   },
   handler: async (ctx, args) => {
     return await ctx.db
       .query("units")
-      .withIndex("by_association", (q) => q.eq("associationId", args.associationId))
+      .withIndex("by_association", (q) =>
+        q.eq("associationId", args.associationId),
+      )
       .order("asc")
       .collect();
   },
@@ -81,8 +109,8 @@ export const create = mutation({
     // Check if unit name already exists in this association
     const existingUnit = await ctx.db
       .query("units")
-      .withIndex("by_association_and_name", (q) => 
-        q.eq("associationId", args.associationId).eq("name", args.name)
+      .withIndex("by_association_and_name", (q) =>
+        q.eq("associationId", args.associationId).eq("name", args.name),
       )
       .first();
 
@@ -124,8 +152,8 @@ export const update = mutation({
     if (args.name && args.name !== unit.name) {
       const existingUnit = await ctx.db
         .query("units")
-        .withIndex("by_association_and_name", (q) => 
-          q.eq("associationId", unit.associationId).eq("name", args.name!)
+        .withIndex("by_association_and_name", (q) =>
+          q.eq("associationId", unit.associationId).eq("name", args.name!),
         )
         .first();
 

@@ -7,7 +7,7 @@ export default defineConfig(({ mode }) => ({
   plugins: [
     react(),
     // The code below enables dev tools like taking screenshots of your site
-    // while it is being developed on chef.convex.dev.
+    // while it is is being developed on chef.convex.dev.
     // Feel free to remove this code if you're no longer developing your app with Chef.
     mode === "development"
       ? {
@@ -39,5 +39,11 @@ window.addEventListener('message', async (message) => {
     alias: {
       "@": path.resolve(__dirname, "./src"),
     },
+  },
+  test: {
+    globals: true,
+    environment: "jsdom",
+    setupFiles: ["./src/test/setup.ts"],
+    css: true,
   },
 }));

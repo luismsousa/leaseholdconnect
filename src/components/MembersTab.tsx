@@ -42,7 +42,14 @@ export function MembersTab({ associationId }: MembersTabProps) {
       setInviteForm({ email: "", name: "", role: "member", unitId: "" });
       setShowInviteForm(false);
     } catch (error) {
-      toast.error("Failed to invite member: " + (error as Error).message);
+      const errorMessage = (error as Error).message;
+      
+      // Provide more specific error messages for email-related issues
+      if (errorMessage.includes("email") || errorMessage.includes("domain") || errorMessage.includes("Resend")) {
+        toast.error("Email sending failed. The member was created but the invitation email could not be sent. Please check your email configuration.");
+      } else {
+        toast.error("Failed to invite member: " + errorMessage);
+      }
     }
   };
 
