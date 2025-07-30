@@ -75,6 +75,21 @@ export function StripePaymentButton({
     );
   }
 
+  // Check if required environment variables are set
+  const stripePublishableKey = import.meta.env.VITE_STRIPE_PUBLISHABLE_KEY;
+  const stripeBuyButtonId = import.meta.env.VITE_STRIPE_BUY_BUTTON_ID;
+
+  if (!stripePublishableKey || !stripeBuyButtonId) {
+    console.error('Missing Stripe environment variables. Please ensure VITE_STRIPE_PUBLISHABLE_KEY and VITE_STRIPE_BUY_BUTTON_ID are set in your .env.local file.');
+    return (
+      <div className={className}>
+        <div className="w-full bg-red-100 text-red-800 py-3 px-6 rounded-lg font-semibold">
+          Error: Stripe configuration missing
+        </div>
+      </div>
+    );
+  }
+
   // Generate a unique client reference ID for tracking this subscription attempt
   // Format: ${userId}_${associationId}_${timestamp}
   // user.id from Clerk already contains "user_" prefix, so we don't need to add it again
@@ -91,8 +106,8 @@ export function StripePaymentButton({
     <div className={className}>
       <div ref={buttonRef} className="w-full stripe-button-container">
         {React.createElement('stripe-buy-button', {
-          'buy-button-id': 'buy_btn_1RqZghGjL5BvrqgGCjxcN0q5',
-          'publishable-key': 'pk_test_51RqZYcGjL5BvrqgGIWx6z8DWJpumYEKw3GenqE87IxdYIfd0KaEgXs3paJBpl6NieIf9nN5dBWJCy2HKjDdQjDOn00b8Olrcrp',
+          'buy-button-id': stripeBuyButtonId,
+          'publishable-key': stripePublishableKey,
           'client-reference-id': clientReferenceId,
           'customer-email': customerEmail,
           style: {
