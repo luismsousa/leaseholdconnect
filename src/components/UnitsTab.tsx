@@ -14,9 +14,10 @@ export function UnitsTab({ associationId }: UnitsTabProps) {
   const createUnit = useMutation(api.units.create);
   const updateUnit = useMutation(api.units.update);
   const removeUnit = useMutation(api.units.remove);
-  
+
   const [showCreateForm, setShowCreateForm] = useState(false);
-  const [selectedBuildingFilter, setSelectedBuildingFilter] = useState<string>("");
+  const [selectedBuildingFilter, setSelectedBuildingFilter] =
+    useState<string>("");
   const [editingUnit, setEditingUnit] = useState<{
     id: Id<"units">;
     name: string;
@@ -45,26 +46,28 @@ export function UnitsTab({ associationId }: UnitsTabProps) {
       floor: unitForm.floor ? parseInt(unitForm.floor) : undefined,
       type: unitForm.type || undefined,
       size: unitForm.size || undefined,
-    }).then(() => {
-      toast.success("Unit created successfully");
-      setUnitForm({
-        name: "",
-        description: "",
-        building: "",
-        floor: "",
-        type: "",
-        size: "",
+    })
+      .then(() => {
+        toast.success("Unit created successfully");
+        setUnitForm({
+          name: "",
+          description: "",
+          building: "",
+          floor: "",
+          type: "",
+          size: "",
+        });
+        setShowCreateForm(false);
+      })
+      .catch((error) => {
+        toast.error("Failed to create unit: " + (error as Error).message);
       });
-      setShowCreateForm(false);
-    }).catch((error) => {
-      toast.error("Failed to create unit: " + (error as Error).message);
-    });
   };
 
   const handleUpdate = (e: React.FormEvent) => {
     e.preventDefault();
     if (!editingUnit) return;
-    
+
     updateUnit({
       id: editingUnit.id,
       name: editingUnit.name,
@@ -73,32 +76,41 @@ export function UnitsTab({ associationId }: UnitsTabProps) {
       floor: editingUnit.floor ? parseInt(editingUnit.floor) : undefined,
       type: editingUnit.type || undefined,
       size: editingUnit.size || undefined,
-    }).then(() => {
-      toast.success("Unit updated successfully");
-      setEditingUnit(null);
-    }).catch((error) => {
-      toast.error("Failed to update unit: " + (error as Error).message);
-    });
+    })
+      .then(() => {
+        toast.success("Unit updated successfully");
+        setEditingUnit(null);
+      })
+      .catch((error) => {
+        toast.error("Failed to update unit: " + (error as Error).message);
+      });
   };
 
   const handleRemove = (unitId: Id<"units">, unitName: string) => {
     // Check if unit has members assigned
-    const unitMembers = members?.filter(member => member.unit === unitName) || [];
-    
+    const unitMembers =
+      members?.filter((member) => member.unit === unitName) || [];
+
     if (unitMembers.length > 0) {
-      const memberNames = unitMembers.map(m => m.name).join(", ");
-      if (!confirm(`This unit has ${unitMembers.length} member(s) assigned: ${memberNames}. Are you sure you want to remove it?`)) {
+      const memberNames = unitMembers.map((m) => m.name).join(", ");
+      if (
+        !confirm(
+          `This unit has ${unitMembers.length} member(s) assigned: ${memberNames}. Are you sure you want to remove it?`,
+        )
+      ) {
         return;
       }
     } else {
       if (!confirm("Are you sure you want to remove this unit?")) return;
     }
-    
-    removeUnit({ id: unitId }).then(() => {
-      toast.success("Unit removed");
-    }).catch((error) => {
-      toast.error("Failed to remove unit: " + (error as Error).message);
-    });
+
+    removeUnit({ id: unitId })
+      .then(() => {
+        toast.success("Unit removed");
+      })
+      .catch((error) => {
+        toast.error("Failed to remove unit: " + (error as Error).message);
+      });
   };
 
   if (!units || !members) {
@@ -127,7 +139,9 @@ export function UnitsTab({ associationId }: UnitsTabProps) {
             className="px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
           >
             <option value="">All Buildings</option>
-            {Array.from(new Set(units.map(unit => unit.building).filter(Boolean))).map((building) => (
+            {Array.from(
+              new Set(units.map((unit) => unit.building).filter(Boolean)),
+            ).map((building) => (
               <option key={building} value={building}>
                 {building}
               </option>
@@ -150,7 +164,13 @@ export function UnitsTab({ associationId }: UnitsTabProps) {
         </div>
         <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
           <div className="text-2xl font-bold text-slate-600">
-            {members.filter(member => member.unit && member.status === "active").length}
+            {
+              members.filter((member) => {
+                if (!member.unit || member.status !== "active") return false;
+                // Only count if the unit actually exists
+                return units.some((unit) => unit.name === member.unit);
+              }).length
+            }
           </div>
           <div className="text-sm text-slate-700">Occupied Units</div>
         </div>
@@ -169,7 +189,9 @@ export function UnitsTab({ associationId }: UnitsTabProps) {
                   type="text"
                   required
                   value={unitForm.name}
-                  onChange={(e) => setUnitForm({ ...unitForm, name: e.target.value })}
+                  onChange={(e) =>
+                    setUnitForm({ ...unitForm, name: e.target.value })
+                  }
                   className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="e.g., 101, A-1, Unit 5"
                 />
@@ -181,7 +203,9 @@ export function UnitsTab({ associationId }: UnitsTabProps) {
                 <input
                   type="text"
                   value={unitForm.building}
-                  onChange={(e) => setUnitForm({ ...unitForm, building: e.target.value })}
+                  onChange={(e) =>
+                    setUnitForm({ ...unitForm, building: e.target.value })
+                  }
                   className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="e.g., Building A, Main"
                 />
@@ -193,7 +217,9 @@ export function UnitsTab({ associationId }: UnitsTabProps) {
                 <input
                   type="number"
                   value={unitForm.floor}
-                  onChange={(e) => setUnitForm({ ...unitForm, floor: e.target.value })}
+                  onChange={(e) =>
+                    setUnitForm({ ...unitForm, floor: e.target.value })
+                  }
                   className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="e.g., 1, 2, 3"
                 />
@@ -205,7 +231,9 @@ export function UnitsTab({ associationId }: UnitsTabProps) {
                 <input
                   type="text"
                   value={unitForm.type}
-                  onChange={(e) => setUnitForm({ ...unitForm, type: e.target.value })}
+                  onChange={(e) =>
+                    setUnitForm({ ...unitForm, type: e.target.value })
+                  }
                   className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="e.g., Apartment, Townhouse, Condo"
                 />
@@ -217,7 +245,9 @@ export function UnitsTab({ associationId }: UnitsTabProps) {
                 <input
                   type="text"
                   value={unitForm.size}
-                  onChange={(e) => setUnitForm({ ...unitForm, size: e.target.value })}
+                  onChange={(e) =>
+                    setUnitForm({ ...unitForm, size: e.target.value })
+                  }
                   className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="e.g., 1200 sq ft, 2BR/2BA"
                 />
@@ -229,7 +259,9 @@ export function UnitsTab({ associationId }: UnitsTabProps) {
               </label>
               <textarea
                 value={unitForm.description}
-                onChange={(e) => setUnitForm({ ...unitForm, description: e.target.value })}
+                onChange={(e) =>
+                  setUnitForm({ ...unitForm, description: e.target.value })
+                }
                 className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                 rows={3}
                 placeholder="Additional details about the unit..."
@@ -256,82 +288,117 @@ export function UnitsTab({ associationId }: UnitsTabProps) {
 
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {units
-          .filter(unit => !selectedBuildingFilter || unit.building === selectedBuildingFilter)
+          .filter(
+            (unit) =>
+              !selectedBuildingFilter ||
+              unit.building === selectedBuildingFilter,
+          )
           .map((unit) => (
-          <div key={unit._id} className="border border-slate-200 rounded-lg p-4 hover:shadow-md transition-shadow">
-            <div className="flex items-start justify-between mb-3">
-              <div>
-                <h3 className="text-lg font-semibold text-slate-900">{unit.name}</h3>
-                {unit.building && (
-                  <p className="text-sm text-slate-600">{unit.building}</p>
-                )}
-              </div>
-            </div>
-            
-            <div className="space-y-2 text-sm text-slate-600 mb-4">
-              {unit.floor && <p><strong>Floor:</strong> {unit.floor}</p>}
-              {unit.type && <p><strong>Type:</strong> {unit.type}</p>}
-              {unit.size && <p><strong>Size:</strong> {unit.size}</p>}
-              {unit.description && <p><strong>Description:</strong> {unit.description}</p>}
-              {members && (
+            <div
+              key={unit._id}
+              className="border border-slate-200 rounded-lg p-4 hover:shadow-md transition-shadow"
+            >
+              <div className="flex items-start justify-between mb-3">
                 <div>
-                  <strong>Members:</strong>
-                  {members.filter(member => member.unit === unit.name).length > 0 ? (
-                    <ul className="mt-1 space-y-1">
-                      {members
-                        .filter(member => member.unit === unit.name)
-                        .map(member => (
-                          <li key={member._id} className="text-xs text-slate-500">
-                            • {member.name} ({member.email})
-                          </li>
-                        ))}
-                    </ul>
-                  ) : (
-                    <span className="text-xs text-slate-400 ml-1">No members assigned</span>
+                  <h3 className="text-lg font-semibold text-slate-900">
+                    {unit.name}
+                  </h3>
+                  {unit.building && (
+                    <p className="text-sm text-slate-600">{unit.building}</p>
                   )}
                 </div>
-              )}
+              </div>
+
+              <div className="space-y-2 text-sm text-slate-600 mb-4">
+                {unit.floor && (
+                  <p>
+                    <strong>Floor:</strong> {unit.floor}
+                  </p>
+                )}
+                {unit.type && (
+                  <p>
+                    <strong>Type:</strong> {unit.type}
+                  </p>
+                )}
+                {unit.size && (
+                  <p>
+                    <strong>Size:</strong> {unit.size}
+                  </p>
+                )}
+                {unit.description && (
+                  <p>
+                    <strong>Description:</strong> {unit.description}
+                  </p>
+                )}
+                {members && (
+                  <div>
+                    <strong>Members:</strong>
+                    {members.filter((member) => member.unit === unit.name)
+                      .length > 0 ? (
+                      <ul className="mt-1 space-y-1">
+                        {members
+                          .filter((member) => member.unit === unit.name)
+                          .map((member) => (
+                            <li
+                              key={member._id}
+                              className="text-xs text-slate-500"
+                            >
+                              • {member.name} ({member.email})
+                            </li>
+                          ))}
+                      </ul>
+                    ) : (
+                      <span className="text-xs text-slate-400 ml-1">
+                        No members assigned
+                      </span>
+                    )}
+                  </div>
+                )}
+              </div>
+
+              <div className="flex space-x-2">
+                <button
+                  onClick={() =>
+                    setEditingUnit({
+                      id: unit._id,
+                      name: unit.name,
+                      description: unit.description || "",
+                      building: unit.building || "",
+                      floor: unit.floor?.toString() || "",
+                      type: unit.type || "",
+                      size: unit.size || "",
+                    })
+                  }
+                  className="flex-1 px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={() => handleRemove(unit._id, unit.name)}
+                  className="flex-1 px-3 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200"
+                >
+                  Remove
+                </button>
+              </div>
             </div>
-            
-            <div className="flex space-x-2">
-              <button
-                onClick={() => setEditingUnit({
-                  id: unit._id,
-                  name: unit.name,
-                  description: unit.description || "",
-                  building: unit.building || "",
-                  floor: unit.floor?.toString() || "",
-                  type: unit.type || "",
-                  size: unit.size || "",
-                })}
-                className="flex-1 px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
-              >
-                Edit
-              </button>
-              <button
-                onClick={() => handleRemove(unit._id, unit.name)}
-                className="flex-1 px-3 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200"
-              >
-                Remove
-              </button>
-            </div>
-          </div>
-        ))}
+          ))}
       </div>
-      
-      {units.filter(unit => 
-        (!selectedBuildingFilter || unit.building === selectedBuildingFilter)
+
+      {units.filter(
+        (unit) =>
+          !selectedBuildingFilter || unit.building === selectedBuildingFilter,
       ).length === 0 && (
         <div className="text-center py-8">
           <div className="text-slate-400 text-4xl mb-4">🏠</div>
           <h3 className="text-lg font-medium text-slate-900 mb-2">
-            {units.length === 0 ? "No units yet" : "No units match the current filters"}
+            {units.length === 0
+              ? "No units yet"
+              : "No units match the current filters"}
           </h3>
           <p className="text-slate-600">
-            {units.length === 0 
+            {units.length === 0
               ? "Start by adding your first unit to the association."
-              : "Try adjusting your filters to see more units."
-            }
+              : "Try adjusting your filters to see more units."}
           </p>
         </div>
       )}
@@ -350,7 +417,9 @@ export function UnitsTab({ associationId }: UnitsTabProps) {
                     type="text"
                     required
                     value={editingUnit.name}
-                    onChange={(e) => setEditingUnit({ ...editingUnit, name: e.target.value })}
+                    onChange={(e) =>
+                      setEditingUnit({ ...editingUnit, name: e.target.value })
+                    }
                     className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="e.g., 101, A-1, Unit 5"
                   />
@@ -362,7 +431,12 @@ export function UnitsTab({ associationId }: UnitsTabProps) {
                   <input
                     type="text"
                     value={editingUnit.building}
-                    onChange={(e) => setEditingUnit({ ...editingUnit, building: e.target.value })}
+                    onChange={(e) =>
+                      setEditingUnit({
+                        ...editingUnit,
+                        building: e.target.value,
+                      })
+                    }
                     className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="e.g., Building A, Main"
                   />
@@ -374,7 +448,9 @@ export function UnitsTab({ associationId }: UnitsTabProps) {
                   <input
                     type="number"
                     value={editingUnit.floor}
-                    onChange={(e) => setEditingUnit({ ...editingUnit, floor: e.target.value })}
+                    onChange={(e) =>
+                      setEditingUnit({ ...editingUnit, floor: e.target.value })
+                    }
                     className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="e.g., 1, 2, 3"
                   />
@@ -386,7 +462,9 @@ export function UnitsTab({ associationId }: UnitsTabProps) {
                   <input
                     type="text"
                     value={editingUnit.type}
-                    onChange={(e) => setEditingUnit({ ...editingUnit, type: e.target.value })}
+                    onChange={(e) =>
+                      setEditingUnit({ ...editingUnit, type: e.target.value })
+                    }
                     className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="e.g., Apartment, Townhouse, Condo"
                   />
@@ -398,7 +476,9 @@ export function UnitsTab({ associationId }: UnitsTabProps) {
                   <input
                     type="text"
                     value={editingUnit.size}
-                    onChange={(e) => setEditingUnit({ ...editingUnit, size: e.target.value })}
+                    onChange={(e) =>
+                      setEditingUnit({ ...editingUnit, size: e.target.value })
+                    }
                     className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="e.g., 1200 sq ft, 2BR/2BA"
                   />
@@ -410,7 +490,12 @@ export function UnitsTab({ associationId }: UnitsTabProps) {
                 </label>
                 <textarea
                   value={editingUnit.description}
-                  onChange={(e) => setEditingUnit({ ...editingUnit, description: e.target.value })}
+                  onChange={(e) =>
+                    setEditingUnit({
+                      ...editingUnit,
+                      description: e.target.value,
+                    })
+                  }
                   className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   rows={3}
                   placeholder="Additional details about the unit..."

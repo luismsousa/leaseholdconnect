@@ -1,49 +1,148 @@
-# Leaseholders Association Management App
-  
-This is a project built with [Chef](https://chef.convex.dev) using [Convex](https://convex.dev) as its backend.
- You can find docs about Chef with useful information like how to deploy to production [here](https://docs.convex.dev/chef).
-  
-This project is connected to the Convex deployment named [`dazzling-anaconda-860`](https://dashboard.convex.dev/d/dazzling-anaconda-860).
-  
-## Project structure
-  
-The frontend code is in the `app` directory and is built with [Vite](https://vitejs.dev/).
-  
-The backend code is in the `convex` directory.
-  
-`npm run dev` will start the frontend and backend servers.
+# LeaseholdConnect - Association Management Platform
+
+A modern web application for managing leaseholders associations, built with React, TypeScript, Convex, and Clerk authentication.
 
 ## Features
 
-- **User Management**: Invite and manage association members
-- **Meeting Management**: Schedule and track association meetings
-- **Document Management**: Store and organize important documents
-- **Voting System**: Create polls and track member votes
-- **Audit Logging**: Track all important actions and changes
-- **Email Notifications**: Send invitations, welcome emails, and notifications using Resend
+### Core Association Management
+- **Member Management**: Add, edit, and manage association members
+- **Meeting Management**: Schedule and manage meetings with agenda items
+- **Voting System**: Create and conduct voting on important decisions
+- **Document Management**: Upload and organize association documents
+- **Unit Management**: Track and manage individual units within associations
+- **Audit Logging**: Comprehensive activity tracking for compliance
 
-## Email Functionality
+### Platform Administration (PaaS)
+- **Multi-tenant Architecture**: Manage multiple associations from a single platform
+- **Subscription Management**: Handle different subscription tiers (Free, Basic, Premium)
+- **Association Lifecycle**: Create, suspend, and reactivate associations
+- **Admin Management**: Manage platform administrators with different roles
+- **Enterprise Leads**: Track and manage enterprise inquiries
 
-This app includes comprehensive email functionality using [Resend](https://resend.com):
+### Enterprise Lead Management
+- **Contact Form**: Professional contact form for enterprise inquiries
+- **Lead Tracking**: Complete CRM functionality for managing leads
+- **Status Management**: Track leads through different stages (New, Contacted, Qualified, Converted, Lost)
+- **Assignment System**: Assign leads to specific administrators
+- **Notes & Comments**: Add detailed notes and comments to leads
+- **Statistics Dashboard**: View lead conversion metrics and trends
 
-- **Invitation Emails**: Sent when new members are invited
-- **Welcome Emails**: Sent when users accept invitations
-- **Notification Emails**: Custom notifications for various events
-- **Test Emails**: Development testing functionality
+## Technology Stack
 
-See [EMAIL_SETUP.md](./EMAIL_SETUP.md) for detailed setup instructions.
+- **Frontend**: React 18, TypeScript, Tailwind CSS
+- **Backend**: Convex (serverless database and functions)
+- **Authentication**: Clerk
+- **Deployment**: Vercel
+- **Analytics**: PostHog
 
-## App authentication
+## Getting Started
 
-Chef apps use [Convex Auth](https://auth.convex.dev/) with Anonymous auth for easy sign in. You may wish to change this before deploying your app.
+### Prerequisites
+- Node.js 18+
+- npm or yarn
+- Convex account
+- Clerk account
 
-## Developing and deploying your app
+### Installation
 
-Check out the [Convex docs](https://docs.convex.dev/) for more information on how to develop with Convex.
-* If you're new to Convex, the [Overview](https://docs.convex.dev/understanding/) is a good place to start
-* Check out the [Hosting and Deployment](https://docs.convex.dev/production/) docs for how to deploy your app
-* Read the [Best Practices](https://docs.convex.dev/understanding/best-practices/) guide for tips on how to improve you app further
+1. Clone the repository:
+```bash
+git clone <repository-url>
+cd leaseholders_association_management_app
+```
 
-## HTTP API
+2. Install dependencies:
+```bash
+npm install
+```
 
-User-defined http routes are defined in the `convex/router.ts` file. We split these routes into a separate file from `convex/http.ts` to allow us to prevent the LLM from modifying the authentication routes.
+3. Set up environment variables:
+```bash
+cp .env.example .env
+```
+
+4. Configure your environment variables:
+```env
+VITE_CLERK_PUBLISHABLE_KEY=your_clerk_key
+VITE_CONVEX_URL=your_convex_url
+VITE_POSTHOG_KEY=your_posthog_key
+```
+
+5. Start the development server:
+```bash
+npm run dev
+```
+
+## Enterprise Lead Management
+
+### Contact Form Flow
+1. **Landing Page**: Users click "Contact Us" on the Enterprise tier
+2. **Contact Form**: Professional form collects:
+   - Full name
+   - Email address
+   - Company name
+   - Phone number
+   - Custom message (with template)
+3. **Lead Creation**: Form submission creates a new lead in the database
+4. **Admin Notification**: PaaS admins can view and manage leads
+
+### Lead Management Features
+- **Status Tracking**: Move leads through pipeline stages
+- **Assignment**: Assign leads to specific administrators
+- **Notes**: Add detailed notes and comments
+- **Filtering**: Filter leads by status
+- **Statistics**: View conversion metrics
+
+### PaaS Admin Dashboard
+- **Tabbed Interface**: Switch between Associations and Leads
+- **Lead Statistics**: View total, new, contacted, qualified, converted, and lost leads
+- **Lead Details**: View full lead information and message
+- **Status Updates**: Update lead status and add notes
+- **Assignment**: Assign leads to team members
+
+## Database Schema
+
+### Leads Table
+```typescript
+leads: defineTable({
+  name: v.string(),
+  email: v.string(),
+  companyName: v.string(),
+  phoneNumber: v.string(),
+  message: v.string(),
+  status: v.union(
+    v.literal("new"),
+    v.literal("contacted"),
+    v.literal("qualified"),
+    v.literal("converted"),
+    v.literal("lost"),
+  ),
+  notes: v.optional(v.string()),
+  assignedTo: v.optional(v.string()),
+  createdAt: v.number(),
+  updatedAt: v.number(),
+})
+```
+
+## API Functions
+
+### Public Functions
+- `submitLead`: Submit a new enterprise lead
+
+### PaaS Admin Functions
+- `listLeads`: List all leads with optional filtering
+- `updateLeadStatus`: Update lead status and notes
+- `assignLead`: Assign lead to specific administrator
+- `getLeadStats`: Get lead statistics and metrics
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Add tests if applicable
+5. Submit a pull request
+
+## License
+
+This project is licensed under the MIT License.

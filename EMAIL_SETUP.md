@@ -32,7 +32,7 @@ Edit your `.env.local` file and update the following variables:
 # Email Configuration
 RESEND_API_KEY=re_your_actual_api_key_here
 FROM_EMAIL=noreply@yourdomain.com
-CONVEX_SITE_URL=https://your-app-url.com
+SITE_URL=https://your-app-url.com
 ```
 
 **Important Notes:**
@@ -77,7 +77,7 @@ The email templates are designed with:
 |----------|-------------|---------|
 | `RESEND_API_KEY` | Your Resend API key | `re_1234567890abcdef` |
 | `FROM_EMAIL` | Sender email address | `noreply@yourdomain.com` |
-| `CONVEX_SITE_URL` | Your application URL | `https://your-app.com` |
+| `SITE_URL` | Your application URL | `https://your-app.com` |
 
 ### 7. Troubleshooting
 

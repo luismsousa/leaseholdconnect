@@ -3,7 +3,6 @@ import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
 import { UserDropdown } from "./UserDropdown";
-import { AssociationSelector } from "./AssociationSelector";
 import { MembersTab } from "./MembersTab";
 import { UnitsTab } from "./UnitsTab";
 import { DocumentsTab } from "./DocumentsTab";
@@ -12,15 +11,25 @@ import { VotingTab } from "./VotingTab";
 import { AuditTab } from "./AuditTab";
 import { UserPreferencesTab } from "./UserPreferencesTab";
 
-type Tab = "overview" | "members" | "units" | "documents" | "meetings" | "voting" | "audit" | "preferences";
+type Tab =
+  | "overview"
+  | "members"
+  | "units"
+  | "documents"
+  | "meetings"
+  | "voting"
+  | "audit"
+  | "preferences";
 
 export function Dashboard() {
   const userPreferences = useQuery(api.userPreferences.getUserPreferences);
-  const currentUser = useQuery(api.clerkAuth.loggedInUser);
   const isPaasAdmin = useQuery(api.paasAdmin.isPaasAdmin);
-  const setSelectedAssociation = useMutation(api.userPreferences.setSelectedAssociation);
-  
-  const [selectedAssociationId, setSelectedAssociationId] = useState<Id<"associations"> | null>(null);
+  const setSelectedAssociation = useMutation(
+    api.userPreferences.setSelectedAssociation,
+  );
+
+  const [selectedAssociationId, setSelectedAssociationId] =
+    useState<Id<"associations"> | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>("overview");
 
   // Get user's associations to auto-select first one if none selected
@@ -30,18 +39,31 @@ export function Dashboard() {
   useEffect(() => {
     if (userPreferences?.selectedAssociationId) {
       setSelectedAssociationId(userPreferences.selectedAssociationId);
-    } else if (!isPaasAdmin && userAssociations && userAssociations.length > 0 && !selectedAssociationId) {
+    } else if (
+      !isPaasAdmin &&
+      userAssociations &&
+      userAssociations.length > 0 &&
+      !selectedAssociationId
+    ) {
       // Auto-select first association for non-PaaS admins if none is selected
       const firstAssociation = userAssociations[0];
       if (firstAssociation) {
         setSelectedAssociationId(firstAssociation._id);
         // Also update user preferences to persist this selection
-        setSelectedAssociation({ associationId: firstAssociation._id });
+        void setSelectedAssociation({ associationId: firstAssociation._id });
       }
     }
-  }, [userPreferences, userAssociations, isPaasAdmin, selectedAssociationId, setSelectedAssociation]);
+  }, [
+    userPreferences,
+    userAssociations,
+    isPaasAdmin,
+    selectedAssociationId,
+    setSelectedAssociation,
+  ]);
 
-  const handleAssociationChange = async (associationId: Id<"associations"> | null) => {
+  const handleAssociationChange = async (
+    associationId: Id<"associations"> | null,
+  ) => {
     setSelectedAssociationId(associationId);
     setActiveTab("overview"); // Reset to overview when changing associations
   };
@@ -88,34 +110,27 @@ export function Dashboard() {
                   className="bg-blue-50 rounded-lg p-6 text-left hover:bg-blue-100 transition-colors"
                 >
                   <div className="flex items-center">
-                    <div className="text-blue-600 text-3xl mr-4">{tab.icon}</div>
+                    <div className="text-blue-600 text-3xl mr-4">
+                      {tab.icon}
+                    </div>
                     <div>
-                      <h3 className="text-lg font-semibold text-slate-900">{tab.name}</h3>
+                      <h3 className="text-lg font-semibold text-slate-900">
+                        {tab.name}
+                      </h3>
                       <p className="text-slate-600">
                         {tab.id === "members" && "Manage association members"}
                         {tab.id === "units" && "Manage property units"}
                         {tab.id === "documents" && "Share and manage documents"}
-                        {tab.id === "meetings" && "Schedule and manage meetings"}
-                        {tab.id === "voting" && "Create and participate in votes"}
+                        {tab.id === "meetings" &&
+                          "Schedule and manage meetings"}
+                        {tab.id === "voting" &&
+                          "Create and participate in votes"}
                         {tab.id === "audit" && "View activity history"}
                       </p>
                     </div>
                   </div>
                 </button>
               ))}
-            </div>
-            
-            <div className="mt-8 p-4 bg-blue-50 rounded-lg">
-              <h3 className="text-lg font-semibold text-blue-900 mb-2">🎉 Association Management Platform</h3>
-              <p className="text-blue-800">
-                Your association management platform is now ready with full functionality. 
-                Click on any section above to get started managing your association.
-              </p>
-              <div className="mt-4 text-sm text-blue-700">
-                <p><strong>Current User:</strong> {currentUser?.name || currentUser?.email}</p>
-                <p><strong>User ID:</strong> {currentUser?._id}</p>
-                <p><strong>PaaS Admin:</strong> {isPaasAdmin ? "Yes" : "No"}</p>
-              </div>
             </div>
           </div>
         );
@@ -139,12 +154,12 @@ export function Dashboard() {
               )}
             </div>
             <div className="flex items-center space-x-4">
-              <AssociationSelector 
+              <UserDropdown
                 selectedAssociationId={selectedAssociationId}
-                onAssociationChange={handleAssociationChange}
-                compact={true}
+                onAssociationChange={(associationId) => {
+                  void handleAssociationChange(associationId);
+                }}
               />
-              <UserDropdown />
             </div>
           </div>
         </div>
@@ -195,13 +210,13 @@ export function Dashboard() {
               {isPaasAdmin ? "PaaS Admin Dashboard" : "No Association Selected"}
             </h3>
             <p className="text-slate-600 mb-6">
-              {isPaasAdmin 
+              {isPaasAdmin
                 ? "Select an association to manage, or use the PaaS admin features above."
                 : "Please select an association from the dropdown above to get started."}
             </p>
             {isPaasAdmin && (
               <button
-                onClick={() => window.location.reload()}
+                onClick={() => (window.location.href = "/")}
                 className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-purple-600 hover:bg-purple-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-purple-500"
               >
                 <span className="mr-2">🔧</span>
