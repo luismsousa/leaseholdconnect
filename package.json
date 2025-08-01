@@ -10,8 +10,9 @@
     "build": "vite build",
     "lint": "tsc -p convex -noEmit --pretty false && tsc -p . -noEmit --pretty false && convex dev --once && vite build",
     "test": "vitest",
-    "test:ui": "vitest --ui",
-    "test:run": "vitest run"
+    "test:once": "vitest run",
+    "test:debug": "vitest --inspect-brk --no-file-parallelism",
+    "test:coverage": "vitest run --coverage --coverage.reporter=text"
   },
   "dependencies": {
     "@clerk/clerk-react": "^5.37.0",
@@ -31,6 +32,7 @@
     "tailwind-merge": "^3.1.0"
   },
   "devDependencies": {
+    "@edge-runtime/vm": "^5.0.0",
     "@eslint/js": "^9.21.0",
     "@testing-library/jest-dom": "^6.6.4",
     "@testing-library/react": "^16.3.0",
@@ -40,6 +42,7 @@
     "@types/react-dom": "^19.0.4",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "~10",
+    "convex-test": "^0.0.38",
     "dotenv": "^16.4.7",
     "eslint": "^9.21.0",
     "eslint-plugin-react-hooks": "^5.1.0",

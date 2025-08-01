@@ -11,6 +11,8 @@ interface MembersTabProps {
 export function MembersTab({ associationId }: MembersTabProps) {
   const members = useQuery(api.members.list, { associationId });
   const units = useQuery(api.units.listForMembers, { associationId });
+  const memberStats = useQuery(api.members.getMemberStats, { associationId });
+  const userAssociations = useQuery(api.associations.getUserAssociations);
   const inviteMember = useMutation(api.members.create);
   const updateMember = useMutation(api.members.update);
   const removeMember = useMutation(api.members.remove);
@@ -24,6 +26,12 @@ export function MembersTab({ associationId }: MembersTabProps) {
     role: "member" as "member" | "admin",
     unitId: "",
   });
+
+  // Check if current user is an admin of this association
+  const isAdmin = userAssociations?.some(association => 
+    association?._id === associationId && 
+    (association?.role === "owner" || association?.role === "admin")
+  );
 
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -102,7 +110,25 @@ export function MembersTab({ associationId }: MembersTabProps) {
   return (
     <div className="bg-white rounded-lg shadow-sm p-6">
       <div className="flex items-center justify-between mb-6">
-        <h2 className="text-2xl font-bold text-slate-900">Members</h2>
+        <div className="flex items-center space-x-4">
+          <h2 className="text-2xl font-bold text-slate-900">Members</h2>
+          {isAdmin && memberStats && (
+            <div className="flex items-center space-x-2 px-3 py-1 bg-slate-100 rounded-lg">
+              <span className="text-sm font-medium text-slate-700">
+                {memberStats.currentCount}
+                {memberStats.maxMembers && ` / ${memberStats.maxMembers}`}
+              </span>
+              <span className="text-xs text-slate-500">
+                ({memberStats.subscriptionTier} tier)
+              </span>
+              {memberStats.isAtLimit && (
+                <span className="text-xs text-red-600 font-medium">
+                  • Limit reached
+                </span>
+              )}
+            </div>
+          )}
+        </div>
         <div className="flex items-center space-x-4">
           <select
             value={selectedUnitFilter}

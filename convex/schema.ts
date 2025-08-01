@@ -2,6 +2,27 @@ import { defineSchema, defineTable } from "convex/server";
 import { v } from "convex/values";
 
 const applicationTables = {
+  // Subscription tiers configuration
+  subscriptionTiers: defineTable({
+    name: v.string(), // "free", "pro", "enterprise"
+    displayName: v.string(), // "Free", "Pro", "Enterprise"
+    description: v.optional(v.string()),
+    maxMembers: v.optional(v.number()),
+    maxUnits: v.optional(v.number()),
+    price: v.optional(v.number()), // Price in pence/cents
+    currency: v.optional(v.string()), // "gbp", "usd", etc.
+    billingInterval: v.optional(v.union(v.literal("monthly"), v.literal("yearly"))),
+    stripePriceId: v.optional(v.string()),
+    features: v.optional(v.array(v.string())),
+    isActive: v.boolean(),
+    sortOrder: v.number(), // For display ordering
+    createdAt: v.number(),
+    updatedAt: v.number(),
+  })
+    .index("by_name", ["name"])
+    .index("by_active", ["isActive"])
+    .index("by_sort_order", ["sortOrder"]),
+
   // Users table for Clerk integration
   users: defineTable({
     name: v.optional(v.string()),
@@ -61,6 +82,7 @@ const applicationTables = {
     stripePriceId: v.optional(v.string()),
     subscriptionStartDate: v.optional(v.number()),
     subscriptionEndDate: v.optional(v.number()),
+    subscriptionCurrentPeriodEnd: v.optional(v.number()),
     lastBillingDate: v.optional(v.number()),
     nextBillingDate: v.optional(v.number()),
     // Settings

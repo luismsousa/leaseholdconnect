@@ -84,6 +84,25 @@ export const bootstrap = mutation({
       return existingMember._id;
     }
 
+    // Check member limit for the association
+    const association = await ctx.db.get(args.associationId);
+    if (!association) {
+      throw new Error("Association not found");
+    }
+
+    if (association.settings?.maxMembers) {
+      // Count current active members
+      const currentMemberCount = await ctx.db
+        .query("members")
+        .withIndex("by_association", (q) => q.eq("associationId", args.associationId))
+        .filter((q) => q.eq(q.field("status"), "active"))
+        .collect();
+
+      if (currentMemberCount.length >= association.settings.maxMembers) {
+        throw new Error(`Member limit reached. Maximum ${association.settings.maxMembers} members allowed for ${association.subscriptionTier} tier.`);
+      }
+    }
+
     // Create member record
     const memberId = await ctx.db.insert("members", {
       associationId: args.associationId,
@@ -212,6 +231,25 @@ export const create = mutation({
 
       if (!unit) {
         throw new Error("Unit not found");
+      }
+    }
+
+    // Check member limit for the association
+    const association = await ctx.db.get(args.associationId);
+    if (!association) {
+      throw new Error("Association not found");
+    }
+
+    if (association.settings?.maxMembers) {
+      // Count current active members
+      const currentMemberCount = await ctx.db
+        .query("members")
+        .withIndex("by_association", (q) => q.eq("associationId", args.associationId))
+        .filter((q) => q.eq(q.field("status"), "active"))
+        .collect();
+
+      if (currentMemberCount.length >= association.settings.maxMembers) {
+        throw new Error(`Member limit reached. Maximum ${association.settings.maxMembers} members allowed for ${association.subscriptionTier} tier.`);
       }
     }
 
@@ -412,5 +450,59 @@ export const remove = mutation({
 
     await ctx.db.delete(args.id);
     return args.id;
+  },
+});
+
+// Get member count and limits for an association
+export const getMemberStats = query({
+  args: { associationId: v.id("associations") },
+  returns: v.object({
+    currentCount: v.number(),
+    maxMembers: v.optional(v.number()),
+    subscriptionTier: v.string(),
+    isAtLimit: v.boolean(),
+  }),
+  handler: async (ctx, args) => {
+    const userId = await getClerkUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+
+    // Check if user is a member of this association
+    const associationMembership = await ctx.db
+      .query("associationMembers")
+      .withIndex("by_association_and_user", (q) => 
+        q.eq("associationId", args.associationId).eq("userId", userId)
+      )
+      .filter((q) => q.eq(q.field("status"), "active"))
+      .first();
+
+    if (!associationMembership) {
+      throw new Error("Not authorized");
+    }
+
+    // Get association details
+    const association = await ctx.db.get(args.associationId);
+    if (!association) {
+      throw new Error("Association not found");
+    }
+
+    // Count current active members
+    const currentMembers = await ctx.db
+      .query("members")
+      .withIndex("by_association", (q) => q.eq("associationId", args.associationId))
+      .filter((q) => q.eq(q.field("status"), "active"))
+      .collect();
+
+    const currentCount = currentMembers.length;
+    const maxMembers = association.settings?.maxMembers;
+    const isAtLimit = maxMembers ? currentCount >= maxMembers : false;
+
+    return {
+      currentCount,
+      maxMembers,
+      subscriptionTier: association.subscriptionTier,
+      isAtLimit,
+    };
   },
 });

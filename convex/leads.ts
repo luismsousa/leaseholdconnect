@@ -2,7 +2,7 @@ import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { requirePaasAdmin } from "./clerkHelpers";
 
-// Submit a new lead (public function)
+// Submit a new lead (public function for landing page contact form)
 export const submitLead = mutation({
   args: {
     name: v.string(),
@@ -13,6 +13,29 @@ export const submitLead = mutation({
   },
   returns: v.id("leads"),
   handler: async (ctx, args) => {
+    // Basic validation for public function
+    if (!args.name || !args.email || !args.companyName || !args.message) {
+      throw new Error("All required fields must be provided");
+    }
+
+    // Simple email validation
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(args.email)) {
+      throw new Error("Invalid email format");
+    }
+
+    // Rate limiting: Check if same email submitted recently (within 1 hour)
+    const oneHourAgo = Date.now() - (60 * 60 * 1000);
+    const recentSubmission = await ctx.db
+      .query("leads")
+      .withIndex("by_created_at", (q) => q.gte("createdAt", oneHourAgo))
+      .filter((q) => q.eq(q.field("email"), args.email))
+      .first();
+
+    if (recentSubmission) {
+      throw new Error("Please wait before submitting another request");
+    }
+
     const now = Date.now();
     
     const leadId = await ctx.db.insert("leads", {

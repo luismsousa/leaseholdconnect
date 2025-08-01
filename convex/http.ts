@@ -4,27 +4,26 @@ import { internal } from "./_generated/api";
 
 const http = httpRouter();
 
-// Stripe webhook handler for processing payment completion
 http.route({
-  path: "/stripe",
+  path: "/api/stripe/webhook",
   method: "POST",
   handler: httpAction(async (ctx, request) => {
-    const signature: string = request.headers.get("stripe-signature") as string;
-    const payload = await request.text();
-    
-    const result = await ctx.runAction(internal.stripe.fulfill, {
-      signature,
-      payload,
-    });
-    
-    if (result.success) {
-      return new Response(null, {
-        status: 200,
+    const body = await request.text();
+    const signature = request.headers.get("stripe-signature");
+
+    if (!signature) {
+      return new Response("Missing stripe-signature header", { status: 400 });
+    }
+
+    try {
+      await ctx.runAction(internal.stripe.handleStripeWebhook, {
+        body,
+        signature,
       });
-    } else {
-      return new Response("Webhook Error", {
-        status: 400,
-      });
+      return new Response("Webhook processed successfully", { status: 200 });
+    } catch (error) {
+      console.error("Webhook processing failed:", error);
+      return new Response("Webhook processing failed", { status: 400 });
     }
   }),
 });

@@ -2,6 +2,7 @@ import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { useState } from "react";
 import { ProTierButton } from "./ProTierButton";
+import { StripeCheckoutButton } from "./StripeCheckoutButton";
 
 interface UserPreferencesTabProps {
   onBack: () => void;
@@ -188,9 +189,13 @@ export function UserPreferencesTab({ onBack }: UserPreferencesTabProps) {
                         Priority support
                       </div>
                     </div>
-                    <ProTierButton 
+                    <StripeCheckoutButton 
                       selectedAssociationId={userPreferences.selectedAssociation._id}
                       className="w-full bg-blue-600 hover:bg-blue-700 text-white py-2 px-4 rounded-md font-medium transition-colors"
+                      tier="pro"
+                      buttonText="Upgrade to Pro"
+                      variant="primary"
+                      isSignedIn={true}
                     />
                   </div>
                 </div>

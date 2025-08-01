@@ -2,6 +2,7 @@ import { v } from "convex/values";
 import { query, mutation, internalMutation, internalQuery } from "./_generated/server";
 import { getClerkUserId, requireClerkAuth } from "./clerkHelpers";
 import { Id } from "./_generated/dataModel";
+import { internal } from "./_generated/api";
 
 // Get current user's associations
 export const getUserAssociations = query({
@@ -95,6 +96,11 @@ export const create = mutation({
 
     const now = Date.now();
 
+    // Get free tier limits from database
+    const freeTierLimits: { maxMembers?: number; maxUnits?: number } = await ctx.runQuery(internal.subscriptionTiers.getTierLimits, {
+      tierName: "free",
+    });
+
     // Create the association
     const associationId = await ctx.db.insert("associations", {
       ...args,
@@ -104,8 +110,8 @@ export const create = mutation({
       settings: {
         allowSelfRegistration: false,
         requireAdminApproval: true,
-        maxMembers: 50, // Free tier limit
-        maxUnits: 25,   // Free tier limit
+        maxMembers: freeTierLimits.maxMembers,
+        maxUnits: freeTierLimits.maxUnits,
       },
       createdBy: userId,
       createdAt: now,

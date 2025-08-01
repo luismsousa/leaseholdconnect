@@ -1,14 +1,21 @@
 import { SignInButton, useUser } from '@clerk/clerk-react';
 import { useState, useEffect } from 'react';
-import { StripePaymentButton } from './StripePaymentButton';
+import { StripeCheckoutButton } from './StripeCheckoutButton';
 import { Id } from '../../convex/_generated/dataModel';
 
 interface ProTierButtonProps {
   className?: string;
   selectedAssociationId?: Id<"associations"> | null;
+  buttonText?: string;
+  variant?: 'primary' | 'secondary' | 'outline';
 }
 
-export function ProTierButton({ className, selectedAssociationId }: ProTierButtonProps) {
+export function ProTierButton({ 
+  className, 
+  selectedAssociationId, 
+  buttonText = "Sign up for Pro",
+  variant = 'primary'
+}: ProTierButtonProps) {
   const { isSignedIn } = useUser();
   const [showPayment, setShowPayment] = useState(false);
 
@@ -29,10 +36,13 @@ export function ProTierButton({ className, selectedAssociationId }: ProTierButto
   // If user is signed in and we should show payment, show the Stripe button
   if (isSignedIn && showPayment) {
     return (
-      <StripePaymentButton 
+      <StripeCheckoutButton 
         className={className} 
         isSignedIn={true}
         selectedAssociationId={selectedAssociationId}
+        tier="pro"
+        buttonText="Complete Pro Subscription"
+        variant={variant}
       />
     );
   }
@@ -40,10 +50,13 @@ export function ProTierButton({ className, selectedAssociationId }: ProTierButto
   // If user is signed in but not showing payment, show regular Stripe button
   if (isSignedIn) {
     return (
-      <StripePaymentButton 
+      <StripeCheckoutButton 
         className={className} 
         isSignedIn={true}
         selectedAssociationId={selectedAssociationId}
+        tier="pro"
+        buttonText={buttonText}
+        variant={variant}
       />
     );
   }
@@ -58,7 +71,7 @@ export function ProTierButton({ className, selectedAssociationId }: ProTierButto
   return (
     <SignInButton mode="modal">
       <button className={className} onClick={handleProSignUp}>
-        Sign up for Pro
+        {buttonText}
       </button>
     </SignInButton>
   );

@@ -145,14 +145,19 @@ export const createAssociationAsAdmin = mutation({
     const now = Date.now();
     const { ownerEmail, ...associationData } = args;
 
+    // Get tier limits from database
+    const tierLimits: { maxMembers?: number; maxUnits?: number } = await ctx.runQuery(internal.subscriptionTiers.getTierLimits, {
+      tierName: args.subscriptionTier,
+    });
+
     // Create the association
     const associationId = await ctx.db.insert("associations", {
       ...associationData,
       settings: {
         allowSelfRegistration: false,
         requireAdminApproval: true,
-        maxMembers: args.subscriptionTier === "free" ? 50 : args.subscriptionTier === "pro" ? 200 : undefined,
-        maxUnits: args.subscriptionTier === "free" ? 25 : args.subscriptionTier === "pro" ? 100 : undefined,
+        maxMembers: tierLimits.maxMembers,
+        maxUnits: tierLimits.maxUnits,
       },
       createdBy: userId,
       createdAt: now,
@@ -376,9 +381,26 @@ export const updateAssociationSubscription = mutation({
       throw new Error("Association not found");
     }
 
+    // Get tier limits from database
+    const tierLimits: { maxMembers?: number; maxUnits?: number } = await ctx.runQuery(internal.subscriptionTiers.getTierLimits, {
+      tierName: args.tier,
+    });
+
+    // Update member limits based on new tier
+    const currentSettings = association.settings || {
+      allowSelfRegistration: false,
+      requireAdminApproval: true,
+    };
+    const newSettings = {
+      ...currentSettings,
+      maxMembers: tierLimits.maxMembers,
+      maxUnits: tierLimits.maxUnits,
+    };
+
     await ctx.db.patch(args.associationId, {
       subscriptionTier: args.tier,
       subscriptionStatus: args.status,
+      settings: newSettings,
       updatedAt: Date.now(),
     });
 

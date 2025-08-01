@@ -5,7 +5,6 @@ import { useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
 import { ContactFormModal } from './ContactFormModal';
-import { StripePaymentButton } from './StripePaymentButton';
 import { ProTierButton } from './ProTierButton';
 
 export function LandingPage() {
@@ -25,6 +24,9 @@ export function LandingPage() {
     api.userPreferences.getUserPreferences,
     isSignedIn ? {} : "skip"
   );
+
+  // Get subscription tiers
+  const subscriptionTiers = useQuery(api.subscriptionTiers.list, {});
 
   // Set selected association from preferences or first available association
   useEffect(() => {
@@ -203,171 +205,95 @@ export function LandingPage() {
           </div>
 
           <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
-            {/* Free Tier */}
-            <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-8 relative">
-              <div className="text-center">
-                <h3 className="text-2xl font-bold text-slate-900 mb-2">Free</h3>
-                <div className="mb-6">
-                  <span className="text-4xl font-bold text-slate-900">£0</span>
-                  <span className="text-slate-600">/month</span>
-                </div>
-                <p className="text-slate-600 mb-8">
-                  Perfect for testing and small associations
-                </p>
-                <ul className="text-left space-y-3 mb-8">
-                  <li className="flex items-center">
-                    <svg className="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                    Up to 10 members
-                  </li>
-                  <li className="flex items-center">
-                    <svg className="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                    Meeting management
-                  </li>
-                  <li className="flex items-center">
-                    <svg className="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                    Voting topics
-                  </li>
-                  <li className="flex items-center">
-                    <svg className="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                    Document storage
-                  </li>
-                  <li className="flex items-center">
-                    <svg className="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                    Member management
-                  </li>
-                </ul>
-                {isSignedIn ? (
-                  <Link
-                    to="/dashboard"
-                    className="w-full bg-slate-900 hover:bg-slate-800 text-white py-3 px-6 rounded-lg font-semibold transition-colors inline-block"
-                  >
-                    Go to Dashboard
-                  </Link>
-                ) : (
-                                  <SignInButton mode="modal">
-                  <button className="w-full bg-slate-900 hover:bg-slate-800 text-white py-3 px-6 rounded-lg font-semibold transition-colors">
-                    Sign up for free
-                  </button>
-                </SignInButton>
-                )}
-              </div>
-            </div>
-
-            {/* Pro Tier */}
-            <div className="bg-white rounded-2xl shadow-xl border-2 border-blue-500 p-8 relative transform scale-105">
-              <div className="absolute -top-4 left-1/2 transform -translate-x-1/2">
-                <span className="bg-blue-600 text-white px-4 py-1 rounded-full text-sm font-semibold">
-                  Most Popular
-                </span>
-              </div>
-              <div className="text-center">
-                <h3 className="text-2xl font-bold text-slate-900 mb-2">Pro</h3>
-                <div className="mb-6">
-                  <span className="text-4xl font-bold text-slate-900">£29</span>
-                  <span className="text-slate-600">/month</span>
-                </div>
-                <p className="text-slate-600 mb-8">
-                  For associations of any size
-                </p>
-                <ul className="text-left space-y-3 mb-8">
-                  <li className="flex items-center">
-                    <svg className="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                    Unlimited members
-                  </li>
-                  <li className="flex items-center">
-                    <svg className="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                    All Free features
-                  </li>
-                  <li className="flex items-center">
-                    <svg className="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                    Advanced meeting features
-                  </li>
-                  <li className="flex items-center">
-                    <svg className="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                    Enhanced voting systems
-                  </li>
-                  <li className="flex items-center">
-                    <svg className="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                    Priority support
-                  </li>
-                </ul>
-                <ProTierButton 
-                  selectedAssociationId={selectedAssociationId} 
-                  className="w-full  text-white py-3 px-6 rounded-lg font-semibold transition-colors" 
-                />
-              </div>
-            </div>
-
-            {/* Enterprise Tier */}
-            <div className="bg-white rounded-2xl shadow-lg border border-slate-200 p-8 relative">
-              <div className="text-center">
-                <h3 className="text-2xl font-bold text-slate-900 mb-2">Enterprise</h3>
-                <div className="mb-6">
-                  <span className="text-2xl font-bold text-slate-900">Contact Us</span>
-                </div>
-                <p className="text-slate-600 mb-8">
-                  For management companies managing multiple sites
-                </p>
-                <ul className="text-left space-y-3 mb-8">
-                  <li className="flex items-center">
-                    <svg className="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                    Multi-site management
-                  </li>
-                  <li className="flex items-center">
-                    <svg className="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                    All Pro features
-                  </li>
-                  <li className="flex items-center">
-                    <svg className="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                    Custom integrations
-                  </li>
-                  <li className="flex items-center">
-                    <svg className="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                    Dedicated account manager
-                  </li>
-                  <li className="flex items-center">
-                    <svg className="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                    </svg>
-                    White-label options
-                  </li>
-                </ul>
-                <button 
-                  onClick={() => setShowContactForm(true)}
-                  className="w-full bg-slate-900 hover:bg-slate-800 text-white py-3 px-6 rounded-lg font-semibold transition-colors"
+            {subscriptionTiers?.map((tier, index) => {
+              const isPopular = tier.name === "pro";
+              const isEnterprise = tier.name === "enterprise";
+              
+              return (
+                <div 
+                  key={tier._id}
+                  className={`bg-white rounded-2xl shadow-lg border border-slate-200 p-8 relative ${
+                    isPopular ? 'shadow-xl border-2 border-blue-500 transform scale-105' : ''
+                  }`}
                 >
-                  Contact Us
-                </button>
-              </div>
-            </div>
+                  {isPopular && (
+                    <div className="absolute -top-4 left-1/2 transform -translate-x-1/2">
+                      <span className="bg-blue-600 text-white px-4 py-1 rounded-full text-sm font-semibold">
+                        Most Popular
+                      </span>
+                    </div>
+                  )}
+                  <div className="text-center">
+                    <h3 className="text-2xl font-bold text-slate-900 mb-2">{tier.displayName}</h3>
+                    <div className="mb-6">
+                      {tier.price !== undefined ? (
+                        <>
+                          <span className="text-4xl font-bold text-slate-900">
+                            £{(tier.price / 100).toFixed(2)}
+                          </span>
+                          <span className="text-slate-600">/month</span>
+                        </>
+                      ) : (
+                        <span className="text-2xl font-bold text-slate-900">Contact Us</span>
+                      )}
+                    </div>
+                    <p className="text-slate-600 mb-8">
+                      {tier.description}
+                    </p>
+                    <ul className="text-left space-y-3 mb-8">
+                      {tier.maxMembers && (
+                        <li className="flex items-center">
+                          <svg className="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                          Up to {tier.maxMembers} members
+                        </li>
+                      )}
+                      {tier.features?.map((feature, featureIndex) => (
+                        <li key={featureIndex} className="flex items-center">
+                          <svg className="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                          </svg>
+                          {feature}
+                        </li>
+                      ))}
+                    </ul>
+                    {isEnterprise ? (
+                      <button 
+                        onClick={() => setShowContactForm(true)}
+                        className="w-full bg-slate-900 hover:bg-slate-800 text-white py-3 px-6 rounded-lg font-semibold transition-colors"
+                      >
+                        Contact Us
+                      </button>
+                    ) : tier.name === "free" ? (
+                      // For free tier, use simple Link or SignInButton
+                      isSignedIn ? (
+                        <Link
+                          to="/dashboard"
+                          className="w-full bg-slate-900 hover:bg-slate-800 text-white py-3 px-6 rounded-lg font-semibold transition-colors block text-center"
+                        >
+                          Go to Dashboard
+                        </Link>
+                      ) : (
+                        <SignInButton mode="modal">
+                          <button className="w-full bg-slate-900 hover:bg-slate-800 text-white py-3 px-6 rounded-lg font-semibold transition-colors">
+                            Sign up for free
+                          </button>
+                        </SignInButton>
+                      )
+                    ) : (
+                      // For paid tiers, use ProTierButton
+                      <ProTierButton
+                        selectedAssociationId={selectedAssociationId}
+                        className="w-full"
+                        buttonText="Get Started"
+                        variant="primary"
+                      />
+                    )}
+                  </div>
+                </div>
+              );
+            })}
           </div>
         </div>
       </section>
