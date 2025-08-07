@@ -1,6 +1,6 @@
-import { mutation, internalMutation, internalAction, action } from "./_generated/server";
+import { internalMutation, internalAction, action } from "./_generated/server";
 import { v } from "convex/values";
-import { getCurrentUser } from "./clerkHelpers";
+// Note: For actions, authenticate inline using ctx.auth rather than helpers typed for Query/Mutation
 import { internal } from "./_generated/api";
 import Stripe from "stripe";
 
@@ -231,42 +231,66 @@ export const createCheckoutSession = action({
       },
     });
 
-    return { url: session.url! };
+    if (!session.url) {
+      throw new Error("No checkout session URL returned by Stripe");
+    }
+    return { url: session.url };
   },
 });
 
 // Create customer portal session for subscription management
-export const createCustomerPortalSession = mutation({
+export const createCustomerPortalSession = action({
   args: {
     associationId: v.id("associations"),
+    returnUrl: v.optional(v.string()),
   },
   returns: v.object({
     url: v.string(),
   }),
-  handler: async (ctx, args) => {
-    const user = await getCurrentUser(ctx);
-    if (!user) {
+  handler: async (ctx, args): Promise<{ url: string }> => {
+    // Ensure the request is authenticated via Clerk (actions have auth)
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
       throw new Error("Not authenticated");
     }
 
-    // Get association details
-    const association = await ctx.db.get(args.associationId);
+    // Get association details via internal query (actions cannot access db directly)
+    const association = await ctx.runQuery(internal.associations.getAssociationInternal, {
+      associationId: args.associationId,
+    });
     if (!association) {
       throw new Error("Association not found");
     }
 
+    const portalLoginUrl = process.env.STRIPE_BILLING_PORTAL_LOGIN_URL;
     if (!association.stripeCustomerId) {
+      // Fallback to a generic portal login URL if configured
+      if (portalLoginUrl) {
+        return { url: portalLoginUrl };
+      }
       throw new Error("No Stripe customer found for this association");
     }
 
-    // Create portal session
-    const stripe = createStripeInstance();
-    const session = await stripe.billingPortal.sessions.create({
-      customer: association.stripeCustomerId,
-      return_url: `${process.env.CONVEX_SITE_URL}/dashboard`,
-    });
+    const returnUrl = args.returnUrl ?? `${process.env.CONVEX_SITE_URL}/dashboard`;
 
-    return { url: session.url };
+    // Create portal session directly from this action
+    const stripe = createStripeInstance();
+    try {
+      const session = await stripe.billingPortal.sessions.create({
+        customer: association.stripeCustomerId,
+        return_url: returnUrl,
+      });
+      if (!session.url) {
+        throw new Error("No billing portal URL returned by Stripe");
+      }
+      return { url: session.url };
+    } catch (e) {
+      // If portal isn't configured in this Stripe environment, use fallback URL
+      if (portalLoginUrl) {
+        return { url: portalLoginUrl };
+      }
+      throw e;
+    }
   },
 });
 
@@ -281,10 +305,9 @@ export const handleStripeWebhook = internalAction({
     const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET!;
     
     let event: Stripe.Event;
-    
     try {
       const stripe = createStripeInstance();
-      event = stripe.webhooks.constructEvent(args.body, args.signature, endpointSecret);
+      event = await stripe.webhooks.constructEventAsync(args.body, args.signature, endpointSecret);
     } catch (err) {
       console.error("Webhook signature verification failed:", err);
       throw new Error("Webhook signature verification failed");
@@ -329,7 +352,7 @@ async function handleCheckoutSessionCompleted(
 
   // Update association with Stripe customer ID
   await ctx.runMutation(internal.stripe.updateAssociationWithCustomer, {
-    associationId: associationId as any,
+    associationId: associationId as unknown as any,
     customerId: session.customer as string,
     subscriptionId: session.subscription as string,
   });
@@ -347,7 +370,7 @@ async function handleSubscriptionCreated(
   }
 
   await ctx.runMutation(internal.stripe.updateAssociationSubscription, {
-    associationId: associationId as any,
+    associationId: associationId as unknown as any,
     subscriptionId: subscription.id,
     status: subscription.status,
     currentPeriodEnd: Date.now() + (30 * 24 * 60 * 60 * 1000), // Default to 30 days from now
@@ -366,7 +389,7 @@ async function handleSubscriptionUpdated(
   }
 
   await ctx.runMutation(internal.stripe.updateAssociationSubscription, {
-    associationId: associationId as any,
+    associationId: associationId as unknown as any,
     subscriptionId: subscription.id,
     status: subscription.status,
     currentPeriodEnd: Date.now() + (30 * 24 * 60 * 60 * 1000), // Default to 30 days from now
@@ -385,7 +408,7 @@ async function handleSubscriptionDeleted(
   }
 
   await ctx.runMutation(internal.stripe.updateAssociationSubscription, {
-    associationId: associationId as any,
+    associationId: associationId as unknown as any,
     subscriptionId: subscription.id,
     status: "canceled",
     currentPeriodEnd: Date.now() + (30 * 24 * 60 * 60 * 1000), // Default to 30 days from now

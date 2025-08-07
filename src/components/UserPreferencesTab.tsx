@@ -1,7 +1,6 @@
-import { useQuery, useMutation } from "convex/react";
+import { useQuery, useAction } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { useState } from "react";
-import { ProTierButton } from "./ProTierButton";
 import { StripeCheckoutButton } from "./StripeCheckoutButton";
 
 interface UserPreferencesTabProps {
@@ -12,7 +11,7 @@ export function UserPreferencesTab({ onBack }: UserPreferencesTabProps) {
   const currentUser = useQuery(api.clerkAuth.loggedInUser);
   const userPreferences = useQuery(api.userPreferences.getUserPreferences);
   const userAssociations = useQuery(api.associations.getUserAssociations);
-  const createPortalSession = useMutation(api.stripe.createCustomerPortalSession);
+  const createPortalSession = useAction(api.stripe.createCustomerPortalSession);
   const [isLoadingPortal, setIsLoadingPortal] = useState(false);
 
   // Check if user is admin of the selected association
@@ -33,8 +32,10 @@ export function UserPreferencesTab({ onBack }: UserPreferencesTabProps) {
     try {
       const result = await createPortalSession({
         associationId: userPreferences.selectedAssociation._id,
+        returnUrl: `${window.location.origin}/dashboard`,
       });
-      window.open(result.url, "_blank");
+      // Open in the same tab for a more consistent UX
+      window.location.href = result.url;
     } catch (error) {
       console.error("Failed to create portal session:", error);
       alert("Failed to open subscription management. Please try again.");
