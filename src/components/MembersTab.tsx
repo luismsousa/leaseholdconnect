@@ -3,13 +3,22 @@ import { useQuery, useMutation } from "convex/react";
 import { api } from "../../convex/_generated/api";
 import { Id } from "../../convex/_generated/dataModel";
 import { toast } from "sonner";
+import { Button } from "@/components/ui/button";
+import {
+  DropdownMenu,
+  DropdownMenuCheckboxItem,
+  DropdownMenuContent,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 
 interface MembersTabProps {
   associationId: Id<"associations">;
 }
 
 export function MembersTab({ associationId }: MembersTabProps) {
-  const members = useQuery(api.members.list, { associationId });
+  const members = useQuery(api.members.listWithUnits, { associationId });
   const units = useQuery(api.units.listForMembers, { associationId });
   const memberStats = useQuery(api.members.getMemberStats, { associationId });
   const userAssociations = useQuery(api.associations.getUserAssociations);
@@ -20,11 +29,13 @@ export function MembersTab({ associationId }: MembersTabProps) {
   const [showInviteForm, setShowInviteForm] = useState(false);
   const [editingMember, setEditingMember] = useState<string | null>(null);
   const [selectedUnitFilter, setSelectedUnitFilter] = useState<string>("");
+  const [editingUnitIds, setEditingUnitIds] = useState<string[]>([]);
+  const [openUnitMenuMemberId, setOpenUnitMenuMemberId] = useState<string | null>(null);
   const [inviteForm, setInviteForm] = useState({
     email: "",
     name: "",
     role: "member" as "member" | "admin",
-    unitId: "",
+    unitIds: [] as string[],
   });
 
   // Check if current user is an admin of this association
@@ -36,25 +47,27 @@ export function MembersTab({ associationId }: MembersTabProps) {
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
-      // Find the unit name by unitId
-      const selectedUnit = units?.find(unit => unit._id === inviteForm.unitId);
-      
       await inviteMember({
         associationId,
         email: inviteForm.email,
         name: inviteForm.name,
         role: inviteForm.role,
-        unit: selectedUnit?.name || undefined,
+        unitIds: inviteForm.unitIds.length ? inviteForm.unitIds as any : undefined,
       });
       toast.success("Member invited successfully");
-      setInviteForm({ email: "", name: "", role: "member", unitId: "" });
+      setInviteForm({ email: "", name: "", role: "member", unitIds: [] });
       setShowInviteForm(false);
     } catch (error) {
-      const errorMessage = (error as Error).message;
+      const errorMessage = (error as Error).message || "";
+      const assignmentMatch = /^(.*) is already assigned to another member/i.exec(errorMessage) ||
+        (errorMessage.toLowerCase().includes("assigned to another member") ? ["", "This unit"] : null);
       
       // Provide more specific error messages for email-related issues
       if (errorMessage.includes("email") || errorMessage.includes("domain") || errorMessage.includes("Resend")) {
         toast.error("Email sending failed. The member was created but the invitation email could not be sent. Please check your email configuration.");
+      } else if (assignmentMatch) {
+        const unitName = assignmentMatch[1]?.trim() || "This unit";
+        toast.error(`${unitName} is already assigned to another member. Deselect it or reassign from that member first.`);
       } else {
         toast.error("Failed to invite member: " + errorMessage);
       }
@@ -71,13 +84,21 @@ export function MembersTab({ associationId }: MembersTabProps) {
     }
   };
 
-  const handleUpdateUnit = async (memberId: Id<"members">, newUnit: string) => {
+  const handleUpdateUnits = async (memberId: Id<"members">, newUnitIds: string[]) => {
     try {
-      await updateMember({ id: memberId, unit: newUnit || undefined });
-      toast.success("Member unit updated");
+      await updateMember({ id: memberId, unitIds: newUnitIds as any });
+      toast.success("Member units updated");
       setEditingMember(null);
     } catch (error) {
-      toast.error("Failed to update member: " + (error as Error).message);
+      const msg = (error as Error).message || "";
+      const assignmentMatch = /^(.*) is already assigned to another member/i.exec(msg) ||
+        (msg.toLowerCase().includes("assigned to another member") ? ["", "This unit"] : null);
+      if (assignmentMatch) {
+        const unitName = assignmentMatch[1]?.trim() || "This unit";
+        toast.error(`${unitName} is already assigned to another member. Deselect it or reassign from that member first.`);
+      } else {
+        toast.error("Failed to update member: " + msg);
+      }
     }
   };
 
@@ -142,19 +163,21 @@ export function MembersTab({ associationId }: MembersTabProps) {
               </option>
             ))}
           </select>
-          <button
-            onClick={() => setShowInviteForm(true)}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            Invite Member
-          </button>
+          {isAdmin && (
+            <button
+              onClick={() => setShowInviteForm(true)}
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              Invite Member
+            </button>
+          )}
         </div>
       </div>
 
-      {showInviteForm && (
+      {isAdmin && showInviteForm && (
         <div className="mb-6 p-4 border border-slate-200 rounded-lg bg-slate-50">
           <h3 className="text-lg font-semibold mb-4">Invite New Member</h3>
-          <form onSubmit={handleInvite} className="space-y-4">
+          <form onSubmit={(e) => void handleInvite(e)} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -195,14 +218,17 @@ export function MembersTab({ associationId }: MembersTabProps) {
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
-                  Unit
+                  Units
                 </label>
                 <select
-                  value={inviteForm.unitId}
-                  onChange={(e) => setInviteForm({ ...inviteForm, unitId: e.target.value })}
-                  className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  multiple
+                  value={inviteForm.unitIds}
+                  onChange={(e) => {
+                    const options = Array.from(e.target.selectedOptions).map(o => o.value);
+                    setInviteForm({ ...inviteForm, unitIds: options });
+                  }}
+                  className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 min-h-28"
                 >
-                  <option value="">Select a unit (optional)</option>
                   {units?.map((unit) => (
                     <option key={unit._id} value={unit._id}>
                       {unit.name} {unit.building ? `(${unit.building})` : ""}
@@ -249,14 +275,19 @@ export function MembersTab({ associationId }: MembersTabProps) {
               <th className="px-6 py-3 text-left text-xs font-medium text-slate-500 uppercase tracking-wider">
                 Joined
               </th>
-              <th className="px-6 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider">
-                Actions
-              </th>
+              {isAdmin && (
+                <th className="px-6 py-3 text-right text-xs font-medium text-slate-500 uppercase tracking-wider">
+                  Actions
+                </th>
+              )}
             </tr>
           </thead>
-          <tbody className="bg-white divide-y divide-slate-200">
+            <tbody className="bg-white divide-y divide-slate-200">
             {members
-              .filter(member => !selectedUnitFilter || member.unit === selectedUnitFilter)
+              .filter(member => {
+                if (!selectedUnitFilter) return true;
+                return member.units?.some(u => u.name === selectedUnitFilter);
+              })
               .map((member) => (
               <tr key={member._id} className="hover:bg-slate-50">
                 <td className="px-6 py-4 whitespace-nowrap">
@@ -275,28 +306,61 @@ export function MembersTab({ associationId }: MembersTabProps) {
                   </div>
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-900">
-                  {editingMember === member._id ? (
-                    <select
-                      value={member.unit || ""}
-                      onChange={(e) => handleUpdateUnit(member._id, e.target.value)}
-                      className="text-sm border border-slate-300 rounded px-2 py-1"
+                  {isAdmin && editingMember === member._id ? (
+                    <DropdownMenu
+                      open={openUnitMenuMemberId === member._id}
+                      onOpenChange={(open) =>
+                        setOpenUnitMenuMemberId(open ? member._id : null)
+                      }
                     >
-                      <option value="">No unit</option>
-                      {units?.map((unit) => (
-                        <option key={unit._id} value={unit.name}>
-                          {unit.name} {unit.building ? `(${unit.building})` : ""}
-                        </option>
-                      ))}
-                    </select>
+                      <DropdownMenuTrigger asChild>
+                        <Button className="text-sm border border-input bg-background hover:bg-accent hover:text-accent-foreground">
+                          {editingUnitIds.length > 0
+                            ? `${editingUnitIds.length} selected`
+                            : "Select units"}
+                        </Button>
+                      </DropdownMenuTrigger>
+                      <DropdownMenuContent className="w-72" align="start">
+                        <DropdownMenuLabel>Select Units</DropdownMenuLabel>
+                        <DropdownMenuSeparator />
+                        {units?.map((unit) => {
+                          const id = unit._id as unknown as string;
+                          const checked = editingUnitIds.includes(id);
+                          return (
+                            <DropdownMenuCheckboxItem
+                              key={unit._id}
+                              checked={checked}
+                              onCheckedChange={(value) => {
+                                if (value) {
+                                  setEditingUnitIds((prev) => (prev.includes(id) ? prev : [...prev, id]));
+                                } else {
+                                  setEditingUnitIds((prev) => prev.filter((x) => x !== id));
+                                }
+                              }}
+                            >
+                              {unit.name}
+                              {unit.building && (
+                                <span className="text-slate-500"> ({unit.building})</span>
+                              )}
+                            </DropdownMenuCheckboxItem>
+                          );
+                        })}
+                        {!units?.length && (
+                          <div className="px-2 py-1.5 text-sm text-slate-500">No units</div>
+                        )}
+                      </DropdownMenuContent>
+                    </DropdownMenu>
                   ) : (
-                    member.unit || "—"
+                    (member.units && member.units.length > 0)
+                      ? member.units.map(u => `${u.name}${u.building ? ` (${u.building})` : ""}`).join(", ")
+                      : "—"
                   )}
                 </td>
                 <td className="px-6 py-4 whitespace-nowrap">
-                  {editingMember === member._id ? (
+                  {isAdmin && editingMember === member._id ? (
                     <select
                       value={member.role}
-                      onChange={(e) => handleUpdateRole(member._id, e.target.value as "member" | "admin")}
+                      onChange={(e) => void handleUpdateRole(member._id, e.target.value as "member" | "admin")}
                       className="text-sm border border-slate-300 rounded px-2 py-1"
                     >
                       <option value="member">Member</option>
@@ -326,37 +390,50 @@ export function MembersTab({ associationId }: MembersTabProps) {
                 <td className="px-6 py-4 whitespace-nowrap text-sm text-slate-500">
                   {member.joinedAt ? new Date(member.joinedAt).toLocaleDateString() : "Invited"}
                 </td>
-                <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
-                  <div className="flex items-center justify-end space-x-2">
-                    {editingMember === member._id ? (
+                {isAdmin && (
+                  <td className="px-6 py-4 whitespace-nowrap text-right text-sm font-medium">
+                    <div className="flex items-center justify-end space-x-2">
+                      {editingMember === member._id ? (
+                        <>
+                          <button
+                            onClick={() => {
+                              setOpenUnitMenuMemberId(null);
+                              void handleUpdateUnits(member._id, editingUnitIds);
+                            }}
+                            className="text-green-600 hover:text-green-900"
+                          >
+                            Apply
+                          </button>
+                          <button
+                            onClick={() => { setEditingMember(null); setEditingUnitIds([]); setOpenUnitMenuMemberId(null); }}
+                            className="text-slate-600 hover:text-slate-900"
+                          >
+                            Cancel
+                          </button>
+                        </>
+                      ) : (
+                        <button
+                          onClick={() => { setEditingMember(member._id); setEditingUnitIds((member.units || []).map(u => u._id as unknown as string)); }}
+                          className="text-blue-600 hover:text-blue-900"
+                        >
+                          Edit
+                        </button>
+                      )}
                       <button
-                        onClick={() => setEditingMember(null)}
-                        className="text-slate-600 hover:text-slate-900"
+                        onClick={() => void handleRemoveMember(member._id)}
+                        className="text-red-600 hover:text-red-900"
                       >
-                        Cancel
+                        Remove
                       </button>
-                    ) : (
-                      <button
-                        onClick={() => setEditingMember(member._id)}
-                        className="text-blue-600 hover:text-blue-900"
-                      >
-                        Edit
-                      </button>
-                    )}
-                    <button
-                      onClick={() => handleRemoveMember(member._id)}
-                      className="text-red-600 hover:text-red-900"
-                    >
-                      Remove
-                    </button>
-                  </div>
-                </td>
+                    </div>
+                  </td>
+                )}
               </tr>
             ))}
           </tbody>
         </table>
         
-        {members.filter(member => !selectedUnitFilter || member.unit === selectedUnitFilter).length === 0 && (
+        {members.filter(member => !selectedUnitFilter || member.units?.some(u => u.name === selectedUnitFilter)).length === 0 && (
           <div className="text-center py-8">
             <div className="text-slate-400 text-4xl mb-4">👥</div>
             <h3 className="text-lg font-medium text-slate-900 mb-2">
@@ -365,8 +442,7 @@ export function MembersTab({ associationId }: MembersTabProps) {
             <p className="text-slate-600">
               {selectedUnitFilter 
                 ? "No members are currently assigned to this unit." 
-                : "Start by inviting your first member to the association."
-              }
+                : "Start by inviting your first member to the association."}
             </p>
           </div>
         )}

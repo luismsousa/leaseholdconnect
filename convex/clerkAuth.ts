@@ -114,6 +114,10 @@ export const checkPendingInvitations = mutation({
     const user: any = await ctx.runMutation(api.clerkAuth.createUserIfNotExists, {});
     if (!user || !user.email) return 0;
     
+    // Extract user id we'll use for linking
+    const partsOuter = user.tokenIdentifier.split('|');
+    const userId = partsOuter.length > 1 ? partsOuter[1] : user.tokenIdentifier;
+
     // Check for pending member invitations
     const pendingInvitations = await ctx.db
       .query("members")
@@ -123,16 +127,16 @@ export const checkPendingInvitations = mutation({
     
     // Auto-accept invitations and update status
     for (const invitation of pendingInvitations) {
+      // Set member name to user's current profile name and link userId
       await ctx.db.patch(invitation._id, {
         status: "active",
         joinedAt: Date.now(),
+        name: user.name,
+        userId: userId,
       });
       
       // Create associationMembers record for the user
-      // Extract user ID from tokenIdentifier
-      const parts = user.tokenIdentifier.split('|');
-      const userId = parts.length > 1 ? parts[1] : user.tokenIdentifier;
-      
+      // userId already extracted above
       // Check if associationMembers record already exists
       const existingMembership = await ctx.db
         .query("associationMembers")
@@ -181,5 +185,33 @@ export const checkPendingInvitations = mutation({
     }
     
     return pendingInvitations.length;
+  },
+});
+
+// Sync member records' name/user link for the current user across all associations
+export const syncMemberProfilesForCurrentUser = mutation({
+  args: {},
+  handler: async (ctx) => {
+    const identity = await ctx.auth.getUserIdentity();
+    if (!identity) {
+      throw new Error("User not authenticated");
+    }
+
+    const parts = identity.tokenIdentifier.split('|');
+    const userId = parts.length > 1 ? parts[1] : identity.tokenIdentifier;
+
+    // Find all member records by email
+    const membersByEmail = identity.email
+      ? await ctx.db.query("members").withIndex("by_email", (q) => q.eq("email", identity.email!)).collect()
+      : [];
+
+    for (const m of membersByEmail) {
+      await ctx.db.patch(m._id, {
+        name: identity.name ?? identity.email ?? m.name,
+        userId,
+      });
+    }
+
+    return membersByEmail.length;
   },
 });

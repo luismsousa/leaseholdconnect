@@ -19,6 +19,7 @@ export function PaasAdminDashboard() {
   const reactivateAssociation = useMutation(api.paasAdmin.reactivateAssociation);
   const updateSubscription = useMutation(api.paasAdmin.updateAssociationSubscription);
   const runMigration = useMutation(api.paasAdmin.runMigration);
+  const syncPricing = useMutation(api.stripe.syncPricingFromStripeMutation);
 
   const [showCreateAdminForm, setShowCreateAdminForm] = useState(false);
   const [showCreateAssociationForm, setShowCreateAssociationForm] = useState(false);
@@ -57,6 +58,16 @@ export function PaasAdminDashboard() {
     }
   };
 
+  const handleSyncPricing = async () => {
+    try {
+      await syncPricing();
+      toast.success("Pricing sync initiated successfully");
+    } catch (error) {
+      toast.error("Pricing sync failed: " + (error as Error).message);
+      posthog.captureException(error)
+    }
+  };
+
   // Show loading while checking PaaS admin status
   if (paasAdmin === undefined) {
     return (
@@ -88,6 +99,12 @@ export function PaasAdminDashboard() {
             className="px-3 py-1.5 text-sm font-medium text-white bg-orange-600 rounded-md hover:bg-orange-700"
           >
             🔧 Fix User IDs & Tokens
+          </button>
+          <button
+            onClick={() => void handleSyncPricing()}
+            className="px-3 py-1.5 text-sm font-medium text-white bg-green-600 rounded-md hover:bg-green-700"
+          >
+            💰 Sync Pricing from Stripe
           </button>
           <span className="text-sm text-slate-600">
             {paasAdmin.user?.name || paasAdmin.user?.email}

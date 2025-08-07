@@ -94,20 +94,24 @@ function AppContent() {
   const checkPendingInvitations = useMutation(
     api.clerkAuth.checkPendingInvitations,
   );
+  const syncMemberProfiles = useMutation(
+    api.clerkAuth.syncMemberProfilesForCurrentUser,
+  );
 
   // Create user and check for pending invitations when user logs in
   useEffect(() => {
     if (currentUser === null) {
       // User is authenticated but doesn't exist in our DB yet
       createUserIfNotExists()
-        .then(() => {
-          checkPendingInvitations().catch(console.error);
-        })
+        .then(() => checkPendingInvitations())
+        .then(() => syncMemberProfiles())
         .catch(console.error);
     } else if (currentUser) {
-      checkPendingInvitations().catch(console.error);
+      checkPendingInvitations()
+        .then(() => syncMemberProfiles())
+        .catch(console.error);
     }
-  }, [currentUser, createUserIfNotExists, checkPendingInvitations]);
+  }, [currentUser, createUserIfNotExists, checkPendingInvitations, syncMemberProfiles]);
 
   // Show loading while checking user status
   if (

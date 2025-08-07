@@ -202,21 +202,7 @@ export function UserPreferencesTab({ onBack }: UserPreferencesTabProps) {
               )}
             </div>
           </div>
-        )}
-
-        {/* Show message for non-admin users */}
-        {userPreferences?.selectedAssociation && !isAssociationAdmin && (
-          <div className="border-t pt-6">
-            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4">
-              <h3 className="text-lg font-semibold text-amber-900 mb-2">Association Management</h3>
-              <p className="text-amber-700">
-                Subscription management is only available to association administrators. 
-                Please contact your association admin to manage subscription settings.
-              </p>
-            </div>
-          </div>
-        )}
-        
+        )}        
         <div className="border-t pt-6">
           <p className="text-slate-600">
             Additional preference settings will be available soon.

@@ -10,6 +10,7 @@ interface StripeCheckoutButtonProps {
   isSignedIn: boolean;
   selectedAssociationId?: Id<"associations"> | null;
   tier: 'pro' | 'enterprise';
+  billingInterval?: 'monthly' | 'yearly';
   buttonText?: string;
   variant?: 'primary' | 'secondary' | 'outline';
 }
@@ -19,7 +20,8 @@ export function StripeCheckoutButton({
   isSignedIn, 
   selectedAssociationId,
   tier,
-  buttonText = "Subscribe to Pro",
+  billingInterval = 'monthly',
+  buttonText = "Start Free Trial",
   variant = 'primary'
 }: StripeCheckoutButtonProps) {
   const [isLoading, setIsLoading] = useState(false);
@@ -41,6 +43,7 @@ export function StripeCheckoutButton({
       const result = await createCheckoutSession({
         associationId: selectedAssociationId,
         tier: tier,
+        billingInterval: billingInterval,
         successUrl,
         cancelUrl,
         userId: user.id,
@@ -60,7 +63,7 @@ export function StripeCheckoutButton({
   if (!isSignedIn) {
     return (
       <div className={className}>
-        <div className="w-full bg-gray-300 text-gray-500 py-3 px-6 rounded-lg font-semibold cursor-not-allowed">
+        <div className="w-full bg-gray-300 text-gray-500 py-3 px-6 rounded-lg font-semibold cursor-not-allowed h-12 flex items-center justify-center">
           Sign in to subscribe
         </div>
       </div>
@@ -70,7 +73,7 @@ export function StripeCheckoutButton({
   if (!selectedAssociationId) {
     return (
       <div className={className}>
-        <div className="w-full bg-gray-300 text-gray-500 py-3 px-6 rounded-lg font-semibold cursor-not-allowed">
+        <div className="w-full bg-gray-300 text-gray-500 py-3 px-6 rounded-lg font-semibold cursor-not-allowed h-12 flex items-center justify-center">
           Please select an association first
         </div>
       </div>
@@ -78,7 +81,7 @@ export function StripeCheckoutButton({
   }
 
   const getButtonClasses = () => {
-    const baseClasses = "w-full py-3 px-6 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed";
+    const baseClasses = "w-full py-3 px-6 rounded-lg font-semibold transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center h-12";
     
     switch (variant) {
       case 'primary':

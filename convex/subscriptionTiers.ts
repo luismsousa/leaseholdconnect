@@ -1,8 +1,8 @@
 import { v } from "convex/values";
-import { query, mutation, internalQuery } from "./_generated/server";
+import { query, mutation, internalQuery, internalMutation } from "./_generated/server";
 import { getClerkUserId } from "./clerkHelpers";
 
-// Get all active subscription tiers (authenticated users only)
+// Get all active subscription tiers (public - for landing page)
 export const list = query({
   args: {},
   returns: v.array(
@@ -15,9 +15,45 @@ export const list = query({
       maxMembers: v.optional(v.number()),
       maxUnits: v.optional(v.number()),
       price: v.optional(v.number()),
+      yearlyPrice: v.optional(v.number()),
       currency: v.optional(v.string()),
       billingInterval: v.optional(v.union(v.literal("monthly"), v.literal("yearly"))),
       stripePriceId: v.optional(v.string()),
+      stripeYearlyPriceId: v.optional(v.string()),
+      features: v.optional(v.array(v.string())),
+      isActive: v.boolean(),
+      sortOrder: v.number(),
+      createdAt: v.number(),
+      updatedAt: v.number(),
+    })
+  ),
+  handler: async (ctx) => {
+    return await ctx.db
+      .query("subscriptionTiers")
+      .withIndex("by_active", (q) => q.eq("isActive", true))
+      .order("asc")
+      .collect();
+  },
+});
+
+// Get all active subscription tiers (authenticated users only)
+export const listAuthenticated = query({
+  args: {},
+  returns: v.array(
+    v.object({
+      _id: v.id("subscriptionTiers"),
+      _creationTime: v.number(),
+      name: v.string(),
+      displayName: v.string(),
+      description: v.optional(v.string()),
+      maxMembers: v.optional(v.number()),
+      maxUnits: v.optional(v.number()),
+      price: v.optional(v.number()),
+      yearlyPrice: v.optional(v.number()),
+      currency: v.optional(v.string()),
+      billingInterval: v.optional(v.union(v.literal("monthly"), v.literal("yearly"))),
+      stripePriceId: v.optional(v.string()),
+      stripeYearlyPriceId: v.optional(v.string()),
       features: v.optional(v.array(v.string())),
       isActive: v.boolean(),
       sortOrder: v.number(),
@@ -54,9 +90,11 @@ export const getByName = query({
       maxMembers: v.optional(v.number()),
       maxUnits: v.optional(v.number()),
       price: v.optional(v.number()),
+      yearlyPrice: v.optional(v.number()),
       currency: v.optional(v.string()),
       billingInterval: v.optional(v.union(v.literal("monthly"), v.literal("yearly"))),
       stripePriceId: v.optional(v.string()),
+      stripeYearlyPriceId: v.optional(v.string()),
       features: v.optional(v.array(v.string())),
       isActive: v.boolean(),
       sortOrder: v.number(),
@@ -283,3 +321,49 @@ export const initializeDefaultTiers = mutation({
     return null;
   },
 }); 
+
+// Get all subscription tiers (internal function for pricing sync)
+export const listAllTiers = internalQuery({
+  args: {},
+  returns: v.array(
+    v.object({
+      _id: v.id("subscriptionTiers"),
+      name: v.string(),
+      displayName: v.string(),
+      price: v.optional(v.number()),
+      yearlyPrice: v.optional(v.number()),
+      currency: v.optional(v.string()),
+      stripePriceId: v.optional(v.string()),
+      stripeYearlyPriceId: v.optional(v.string()),
+      isActive: v.boolean(),
+    })
+  ),
+  handler: async (ctx) => {
+    return await ctx.db
+      .query("subscriptionTiers")
+      .filter((q) => q.eq(q.field("isActive"), true))
+      .collect();
+  },
+});
+
+// Update tier pricing (internal function for pricing sync)
+export const updateTierPricing = internalMutation({
+  args: {
+    tierId: v.id("subscriptionTiers"),
+    updates: v.object({
+      price: v.optional(v.number()),
+      yearlyPrice: v.optional(v.number()),
+      currency: v.optional(v.string()),
+      stripePriceId: v.optional(v.string()),
+      stripeYearlyPriceId: v.optional(v.string()),
+      updatedAt: v.number(),
+    }),
+  },
+  returns: v.null(),
+  handler: async (ctx, args) => {
+    await ctx.db.patch(args.tierId, args.updates);
+    return null;
+  },
+}); 
+
+ 

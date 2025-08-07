@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { query, mutation } from "./_generated/server";
 import { getClerkUserId } from "./clerkHelpers";
-import { Id } from "./_generated/dataModel";
+import { Id, Doc } from "./_generated/dataModel";
 
 // Helper function to check if user is admin of association
 async function requireAssociationAdmin(
@@ -184,6 +184,15 @@ export const remove = mutation({
     }
 
     await requireAssociationAdmin(ctx, unit.associationId);
+
+    // Cleanup: delete member-unit assignments for this unit
+    const assignments = await ctx.db
+      .query("memberUnits")
+      .withIndex("by_unit", (q) => q.eq("unitId", args.id))
+      .collect();
+    for (const row of assignments) {
+      await ctx.db.delete(row._id);
+    }
 
     await ctx.db.delete(args.id);
     return args.id;

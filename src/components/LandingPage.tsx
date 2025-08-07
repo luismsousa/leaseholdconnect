@@ -12,6 +12,11 @@ export function LandingPage() {
   const { signOut } = useClerk();
   const [showContactForm, setShowContactForm] = useState(false);
   const [selectedAssociationId, setSelectedAssociationId] = useState<Id<"associations"> | null>(null);
+  const [isAnnualPricing, setIsAnnualPricing] = useState(false);
+
+  // Feature flags
+  const ENABLE_CALCULATOR = false;
+  const ENABLE_SOCIAL_PROOF = false;
 
   // Get user's associations if signed in
   const userAssociations = useQuery(
@@ -43,6 +48,56 @@ export function LandingPage() {
 
   const handleSignOut = () => {
     void signOut({ redirectUrl: "/" });
+  };
+
+  // Get plan-specific social proof
+  const getSocialProof = (tierName: string) => {
+    switch (tierName) {
+      case 'free':
+        return "Join 500+ small associations";
+      case 'pro':
+        return "Used by 200+ growing associations";
+      case 'enterprise':
+        return "Trusted by 50+ large associations";
+      default:
+        return "";
+    }
+  };
+
+  // Get focused features (max 5-7 key differentiators)
+  const getFocusedFeatures = (tierName: string) => {
+    switch (tierName) {
+      case 'free':
+        return [
+          "Up to 10 members",
+          "Basic meeting management",
+          "Simple voting system",
+          "Document storage (1GB)",
+          "Email support"
+        ];
+      case 'pro':
+        return [
+          "Up to 50 members",
+          "Advanced meeting features",
+          "Enhanced voting with analytics",
+          "Unlimited document storage",
+          "Priority support",
+          "Custom branding",
+          "API access"
+        ];
+      case 'enterprise':
+        return [
+          "Unlimited members",
+          "Full meeting automation",
+          "Advanced voting & governance",
+          "Enterprise security",
+          "Dedicated account manager",
+          "Custom integrations",
+          "SLA guarantees"
+        ];
+      default:
+        return [];
+    }
   };
 
   return (
@@ -79,7 +134,7 @@ export function LandingPage() {
                   </SignInButton>
                   <SignInButton mode="modal">
                     <button className="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-md text-sm font-medium transition-colors">
-                      Get Started
+                      Start Free Trial
                     </button>
                   </SignInButton>
                 </>
@@ -112,7 +167,7 @@ export function LandingPage() {
               ) : (
                 <SignInButton mode="modal">
                   <button className="bg-blue-600 hover:bg-blue-700 text-white px-8 py-4 rounded-lg text-lg font-semibold transition-colors shadow-lg hover:shadow-xl">
-                    Get started free
+                    Start Free Trial
                   </button>
                 </SignInButton>
               )}
@@ -189,8 +244,33 @@ export function LandingPage() {
               </p>
             </div>
           </div>
-        </div>
-      </section>
+                  </div>
+        </section>
+
+      {/* ROI Calculator Hook */}
+      {ENABLE_CALCULATOR && (
+        <section className="py-16 bg-blue-600">
+          <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
+            <h2 className="text-3xl font-bold text-white mb-4">
+              Calculate Your Savings
+            </h2>
+            <p className="text-blue-100 mb-8 text-lg">
+              See how much time and money you'll save with LeaseholdConnect
+            </p>
+            <div className="bg-white rounded-lg p-6 max-w-md mx-auto">
+              <div className="text-center">
+                <p className="text-slate-600 mb-4">Average time saved per month:</p>
+                <p className="text-3xl font-bold text-blue-600 mb-2">8-12 hours</p>
+                <p className="text-slate-600 mb-4">Estimated value:</p>
+                <p className="text-2xl font-bold text-green-600">£200-400/month</p>
+                <button className="mt-4 bg-blue-600 hover:bg-blue-700 text-white px-6 py-2 rounded-lg font-semibold transition-colors">
+                  Try Our Calculator
+                </button>
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
 
       {/* Pricing Section */}
       <section className="py-24 bg-slate-50">
@@ -199,20 +279,74 @@ export function LandingPage() {
             <h2 className="text-4xl font-bold text-slate-900 mb-4">
               Simple, transparent pricing
             </h2>
-            <p className="text-xl text-slate-600">
+            <p className="text-xl text-slate-600 mb-8">
               Choose the plan that works best for your association
             </p>
+            
+            {/* Pricing Toggle */}
+            <div className="flex items-center justify-center space-x-4 mb-8">
+              <span className={`text-sm font-medium ${!isAnnualPricing ? 'text-slate-900' : 'text-slate-500'}`}>
+                Monthly
+              </span>
+              <button
+                onClick={() => setIsAnnualPricing(!isAnnualPricing)}
+                className={`relative inline-flex h-6 w-11 items-center rounded-full transition-colors ${
+                  isAnnualPricing ? 'bg-blue-600' : 'bg-slate-200'
+                }`}
+              >
+                <span
+                  className={`inline-block h-4 w-4 transform rounded-full bg-white transition-transform ${
+                    isAnnualPricing ? 'translate-x-6' : 'translate-x-1'
+                  }`}
+                />
+              </button>
+              <span className={`text-sm font-medium ${isAnnualPricing ? 'text-slate-900' : 'text-slate-500'}`}>
+                Annual
+                {isAnnualPricing && (
+                  <span className="ml-1 bg-green-100 text-green-800 text-xs px-2 py-1 rounded-full">
+                    2 Months Free
+                  </span>
+                )}
+              </span>
+            </div>
           </div>
 
           <div className="grid md:grid-cols-3 gap-8 max-w-5xl mx-auto">
-            {subscriptionTiers?.map((tier, index) => {
+            {subscriptionTiers?.map((tier) => {
               const isPopular = tier.name === "pro";
               const isEnterprise = tier.name === "enterprise";
+              const focusedFeatures = getFocusedFeatures(tier.name);
+              const socialProof = getSocialProof(tier.name);
+              
+              // Calculate pricing
+              let displayPrice = tier.price || 0;
+              let billingText = "/month";
+              let savingsText = "";
+              
+              if (isAnnualPricing) {
+                if (tier.yearlyPrice && tier.yearlyPrice > 0) {
+                  // Use the stored yearly price
+                  displayPrice = tier.yearlyPrice;
+                  billingText = "/year";
+                  // Calculate savings (2 months free = 10 months worth for 12 months)
+                  const monthlyEquivalent = tier.price || 0;
+                  const yearlyEquivalent = monthlyEquivalent * 12;
+                  const savings = yearlyEquivalent - tier.yearlyPrice;
+                  savingsText = `Save £${(savings / 100).toFixed(2)}/year`;
+                } else if (tier.price && tier.price > 0) {
+                  // Fallback: calculate yearly price (10 months worth for 12 months)
+                  displayPrice = tier.price * 10; // 10 months worth
+                  billingText = "/year";
+                  const yearlyEquivalent = tier.price * 12;
+                  const savings = yearlyEquivalent - displayPrice;
+                  savingsText = `Save £${(savings / 100).toFixed(2)}/year`;
+                }
+              }
               
               return (
-                <div 
+                                <div 
                   key={tier._id}
-                  className={`bg-white rounded-2xl shadow-lg border border-slate-200 p-8 relative ${
+                  className={`bg-white rounded-2xl shadow-lg border border-slate-200 p-8 relative flex flex-col ${
                     isPopular ? 'shadow-xl border-2 border-blue-500 transform scale-105' : ''
                   }`}
                 >
@@ -223,15 +357,31 @@ export function LandingPage() {
                       </span>
                     </div>
                   )}
-                  <div className="text-center">
-                    <h3 className="text-2xl font-bold text-slate-900 mb-2">{tier.displayName}</h3>
+                  <div className="text-center flex flex-col h-full">
+                      <h3 className="text-2xl font-bold text-slate-900 mb-2">{tier.displayName}</h3>
+                      
+                      {/* Social Proof */}
+                      {ENABLE_SOCIAL_PROOF && socialProof && (
+                        <p className="text-sm text-slate-500 mb-4">{socialProof}</p>
+                      )}
+                    
                     <div className="mb-6">
                       {tier.price !== undefined ? (
                         <>
                           <span className="text-4xl font-bold text-slate-900">
-                            £{(tier.price / 100).toFixed(2)}
+                            £{(displayPrice / 100).toFixed(2)}
                           </span>
-                          <span className="text-slate-600">/month</span>
+                          <span className="text-slate-600">{billingText}</span>
+                          {isAnnualPricing && savingsText && (
+                            <div className="text-sm text-green-600 mt-1">
+                              {savingsText}
+                            </div>
+                          )}
+                          {tier.name === "pro" && (
+                            <div className="text-sm text-blue-600 mt-1 font-medium">
+                              ✨ 14-day free trial
+                            </div>
+                          )}
                         </>
                       ) : (
                         <span className="text-2xl font-bold text-slate-900">Contact Us</span>
@@ -241,15 +391,7 @@ export function LandingPage() {
                       {tier.description}
                     </p>
                     <ul className="text-left space-y-3 mb-8">
-                      {tier.maxMembers && (
-                        <li className="flex items-center">
-                          <svg className="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
-                          </svg>
-                          Up to {tier.maxMembers} members
-                        </li>
-                      )}
-                      {tier.features?.map((feature, featureIndex) => (
+                      {focusedFeatures.map((feature, featureIndex) => (
                         <li key={featureIndex} className="flex items-center">
                           <svg className="w-5 h-5 text-green-500 mr-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
@@ -258,42 +400,114 @@ export function LandingPage() {
                         </li>
                       ))}
                     </ul>
-                    {isEnterprise ? (
-                      <button 
-                        onClick={() => setShowContactForm(true)}
-                        className="w-full bg-slate-900 hover:bg-slate-800 text-white py-3 px-6 rounded-lg font-semibold transition-colors"
-                      >
-                        Contact Us
-                      </button>
-                    ) : tier.name === "free" ? (
-                      // For free tier, use simple Link or SignInButton
-                      isSignedIn ? (
-                        <Link
-                          to="/dashboard"
-                          className="w-full bg-slate-900 hover:bg-slate-800 text-white py-3 px-6 rounded-lg font-semibold transition-colors block text-center"
+                    <div className="mt-auto">
+                      {isEnterprise ? (
+                        <button 
+                          onClick={() => setShowContactForm(true)}
+                          className="w-full bg-slate-900 hover:bg-slate-800 text-white py-3 px-6 rounded-lg font-semibold transition-colors h-12 flex items-center justify-center"
                         >
-                          Go to Dashboard
-                        </Link>
+                          Schedule Demo
+                        </button>
+                      ) : tier.name === "free" ? (
+                        // For free tier, use simple Link or SignInButton
+                        isSignedIn ? (
+                          <Link
+                            to="/dashboard"
+                            className="w-full bg-slate-900 hover:bg-slate-800 text-white py-3 px-6 rounded-lg font-semibold transition-colors block text-center h-12 flex items-center justify-center"
+                          >
+                            Go to Dashboard
+                          </Link>
+                        ) : (
+                          <SignInButton mode="modal">
+                            <button className="w-full bg-slate-900 hover:bg-slate-800 text-white py-3 px-6 rounded-lg font-semibold transition-colors h-12 flex items-center justify-center">
+                              Start Free Trial
+                            </button>
+                          </SignInButton>
+                        )
                       ) : (
-                        <SignInButton mode="modal">
-                          <button className="w-full bg-slate-900 hover:bg-slate-800 text-white py-3 px-6 rounded-lg font-semibold transition-colors">
-                            Sign up for free
-                          </button>
-                        </SignInButton>
-                      )
-                    ) : (
-                      // For paid tiers, use ProTierButton
-                      <ProTierButton
-                        selectedAssociationId={selectedAssociationId}
-                        className="w-full"
-                        buttonText="Get Started"
-                        variant="primary"
-                      />
-                    )}
+                        // For paid tiers, use ProTierButton
+                        <ProTierButton
+                          selectedAssociationId={selectedAssociationId}
+                          className="w-full h-12"
+                          buttonText={tier.name === "pro" ? "Start 14-Day Free Trial" : "Start Free Trial"}
+                          variant="primary"
+                          billingInterval={isAnnualPricing ? 'yearly' : 'monthly'}
+                        />
+                      )}
+                    </div>
                   </div>
                 </div>
               );
             })}
+          </div>
+        </div>
+      </section>
+
+      {/* Objection Handling Section */}
+      <section className="py-24 bg-white">
+        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="text-center mb-16">
+            <h2 className="text-4xl font-bold text-slate-900 mb-4">
+              Frequently Asked Questions
+            </h2>
+            <p className="text-xl text-slate-600">
+              Everything you need to know about LeaseholdConnect
+            </p>
+          </div>
+          
+          <div className="grid md:grid-cols-2 gap-8">
+            <div className="space-y-6">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900 mb-2">
+                  Can I cancel anytime?
+                </h3>
+                <p className="text-slate-600">
+                  Yes, you can cancel your subscription at any time. No long-term contracts or hidden fees.
+                </p>
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900 mb-2">
+                  Is there a free trial?
+                </h3>
+                <p className="text-slate-600">
+                  Yes! Pro tier includes a 14-day free trial. Start with our free plan and upgrade when you're ready. No credit card required for the free plan.
+                </p>
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900 mb-2">
+                  How long does setup take?
+                </h3>
+                <p className="text-slate-600">
+                  Most associations are up and running in under 30 minutes. We provide step-by-step guidance.
+                </p>
+              </div>
+            </div>
+            <div className="space-y-6">
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900 mb-2">
+                  What about data security?
+                </h3>
+                <p className="text-slate-600">
+                  Your data is encrypted and stored securely.
+                </p>
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900 mb-2">
+                  Do you offer support?
+                </h3>
+                <p className="text-slate-600">
+                  Yes! Free users get email support, Pro users get priority support, and Enterprise users get dedicated account management.
+                </p>
+              </div>
+              <div>
+                <h3 className="text-lg font-semibold text-slate-900 mb-2">
+                  Can I import existing data?
+                </h3>
+                <p className="text-slate-600">
+                  Absolutely! We provide tools to import member lists, documents, and meeting records from your existing systems.
+                </p>
+              </div>
+            </div>
           </div>
         </div>
       </section>
