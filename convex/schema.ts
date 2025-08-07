@@ -9,10 +9,12 @@ const applicationTables = {
     description: v.optional(v.string()),
     maxMembers: v.optional(v.number()),
     maxUnits: v.optional(v.number()),
-    price: v.optional(v.number()), // Price in pence/cents
+    price: v.optional(v.number()), // Monthly price in pence/cents
+    yearlyPrice: v.optional(v.number()), // Yearly price in pence/cents
     currency: v.optional(v.string()), // "gbp", "usd", etc.
     billingInterval: v.optional(v.union(v.literal("monthly"), v.literal("yearly"))),
     stripePriceId: v.optional(v.string()),
+    stripeYearlyPriceId: v.optional(v.string()), // Stripe price ID for yearly billing
     features: v.optional(v.array(v.string())),
     isActive: v.boolean(),
     sortOrder: v.number(), // For display ordering
@@ -150,6 +152,8 @@ const applicationTables = {
     associationId: v.id("associations"),
     email: v.string(),
     name: v.string(),
+    // Link to Clerk user id for robust identity syncing
+    userId: v.optional(v.string()),
     unit: v.optional(v.string()),
     role: v.union(v.literal("admin"), v.literal("member")),
     status: v.union(
@@ -173,6 +177,7 @@ const applicationTables = {
     .index("by_association_and_status", ["associationId", "status"])
     .index("by_association_and_role", ["associationId", "role"])
     .index("by_association_and_unit", ["associationId", "unit"])
+    .index("by_association_and_user", ["associationId", "userId"]) 
     .index("by_email", ["email"]),
 
   units: defineTable({
@@ -190,6 +195,17 @@ const applicationTables = {
     .index("by_association", ["associationId"])
     .index("by_association_and_name", ["associationId", "name"])
     .index("by_association_and_building", ["associationId", "building"]),
+
+  // Join table: many-to-many between members and units
+  memberUnits: defineTable({
+    associationId: v.id("associations"),
+    memberId: v.id("members"),
+    unitId: v.id("units"),
+    createdAt: v.number(),
+  })
+    .index("by_association_and_member", ["associationId", "memberId"]) 
+    .index("by_association_and_unit", ["associationId", "unitId"]) 
+    .index("by_unit", ["unitId"]),
 
   documents: defineTable({
     associationId: v.id("associations"),

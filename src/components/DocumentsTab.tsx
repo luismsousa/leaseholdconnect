@@ -12,6 +12,7 @@ export function DocumentsTab({ associationId }: DocumentsTabProps) {
   const documents = useQuery(api.documents.list, { associationId });
   const buildings = useQuery(api.documents.getBuildings, { associationId });
   const documentCategories = useQuery(api.documents.getCategories, { associationId });
+  const userAssociations = useQuery(api.associations.getUserAssociations);
   const createDocument = useMutation(api.documents.create);
   const removeDocument = useMutation(api.documents.remove);
   const generateUploadUrl = useMutation(api.documents.generateUploadUrl);
@@ -43,6 +44,13 @@ export function DocumentsTab({ associationId }: DocumentsTabProps) {
   ];
 
   const categories = documentCategories || defaultCategories;
+
+  // Check if current user is an admin of this association
+  const isAdmin = userAssociations?.some(
+    (association) =>
+      association?._id === associationId &&
+      (association?.role === "owner" || association?.role === "admin"),
+  );
 
   const handleFileUpload = async (file: File) => {
     if (!file) return;
@@ -174,12 +182,14 @@ export function DocumentsTab({ associationId }: DocumentsTabProps) {
               </option>
             ))}
           </select>
-          <button
-            onClick={() => setShowUploadForm(true)}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            Upload Document
-          </button>
+          {isAdmin && (
+            <button
+              onClick={() => setShowUploadForm(true)}
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              Upload Document
+            </button>
+          )}
         </div>
       </div>
 
@@ -203,7 +213,7 @@ export function DocumentsTab({ associationId }: DocumentsTabProps) {
         </div>
       </div>
 
-      {showUploadForm && (
+      {isAdmin && showUploadForm && (
         <div className="mb-6 p-4 border border-slate-200 rounded-lg bg-slate-50">
           <h3 className="text-lg font-semibold mb-4">Upload New Document</h3>
           <form onSubmit={handleSubmit} className="space-y-4">
@@ -422,12 +432,14 @@ export function DocumentsTab({ associationId }: DocumentsTabProps) {
                     View
                   </a>
                 )}
-                <button
-                  onClick={() => handleRemove(doc._id, doc.title)}
-                  className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200"
-                >
-                  Delete
-                </button>
+                {isAdmin && (
+                  <button
+                    onClick={() => handleRemove(doc._id, doc.title)}
+                    className="px-3 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200"
+                  >
+                    Delete
+                  </button>
+                )}
               </div>
             </div>
           </div>

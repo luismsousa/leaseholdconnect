@@ -1,7 +1,7 @@
 import { v } from "convex/values";
 import { query, mutation, internalMutation } from "./_generated/server";
 import { getClerkUserId, requireClerkAuth } from "./clerkHelpers";
-import { Id } from "./_generated/dataModel";
+import { Id, Doc } from "./_generated/dataModel";
 import { internal, api } from "./_generated/api";
 
 // Get current member for a specific association
@@ -108,6 +108,7 @@ export const bootstrap = mutation({
       associationId: args.associationId,
       email: identity.email || "",
       name: identity.name || identity.email || "User",
+      userId: userId,
       role: associationMembership.role === "owner" ? "admin" : "member",
       status: "active",
       joinedAt: Date.now(),
@@ -143,6 +144,111 @@ export const list = query({
       .query("members")
       .withIndex("by_association", (q) => q.eq("associationId", args.associationId))
       .collect();
+  },
+});
+
+// List members including their assigned units (many-to-many)
+export const listWithUnits = query({
+  args: { associationId: v.id("associations") },
+  returns: v.array(
+    v.object({
+      _id: v.id("members"),
+      associationId: v.id("associations"),
+      email: v.string(),
+      name: v.string(),
+      role: v.union(v.literal("admin"), v.literal("member")),
+      status: v.union(v.literal("active"), v.literal("inactive"), v.literal("invited")),
+      joinedAt: v.optional(v.number()),
+      invitedAt: v.optional(v.number()),
+      units: v.array(
+        v.object({ _id: v.id("units"), name: v.string(), building: v.optional(v.string()) })
+      ),
+    })
+  ),
+  handler: async (ctx, args) => {
+    const userId = await getClerkUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+
+    const associationMembership = await ctx.db
+      .query("associationMembers")
+      .withIndex("by_association_and_user", (q) =>
+        q.eq("associationId", args.associationId).eq("userId", userId)
+      )
+      .filter((q) => q.eq(q.field("status"), "active"))
+      .first();
+
+    if (!associationMembership) {
+      throw new Error("Not authorized");
+    }
+
+    const members = await ctx.db
+      .query("members")
+      .withIndex("by_association", (q) => q.eq("associationId", args.associationId))
+      .collect();
+
+    // Load all assignments for the association
+    const assignments = await ctx.db
+      .query("memberUnits")
+      .withIndex("by_association_and_member", (q) => q.eq("associationId", args.associationId))
+      .collect();
+
+    const unitIds = Array.from(new Set(assignments.map((a) => a.unitId)));
+    const units: Array<Doc<"units"> | null> = await Promise.all(unitIds.map((id) => ctx.db.get(id)));
+    const unitMap = new Map<string, Doc<"units">>();
+    for (const u of units) {
+      if (u) unitMap.set(u._id, u);
+    }
+
+    return members.map((m) => {
+      const mAssignments = assignments.filter((a) => a.memberId === m._id);
+      const mUnits = mAssignments
+        .map((a) => unitMap.get(a.unitId))
+        .filter((u): u is Doc<"units"> => Boolean(u))
+        .map((u) => ({ _id: u._id, name: u.name, building: u.building }));
+      return {
+        _id: m._id,
+        associationId: m.associationId,
+        email: m.email,
+        name: m.name,
+        role: m.role,
+        status: m.status,
+        joinedAt: (m as any).joinedAt,
+        invitedAt: (m as any).invitedAt,
+        units: mUnits,
+      };
+    });
+  },
+});
+
+// List all unit assignments for an association
+export const listAssignments = query({
+  args: { associationId: v.id("associations") },
+  returns: v.array(v.object({ memberId: v.id("members"), unitId: v.id("units") })),
+  handler: async (ctx, args) => {
+    const userId = await getClerkUserId(ctx);
+    if (!userId) {
+      throw new Error("Not authenticated");
+    }
+
+    const associationMembership = await ctx.db
+      .query("associationMembers")
+      .withIndex("by_association_and_user", (q) =>
+        q.eq("associationId", args.associationId).eq("userId", userId)
+      )
+      .filter((q) => q.eq(q.field("status"), "active"))
+      .first();
+
+    if (!associationMembership) {
+      throw new Error("Not authorized");
+    }
+
+    const rows = await ctx.db
+      .query("memberUnits")
+      .withIndex("by_association_and_member", (q) => q.eq("associationId", args.associationId))
+      .collect();
+    return rows.map((r) => ({ memberId: r.memberId, unitId: r.unitId }));
   },
 });
 
@@ -186,8 +292,11 @@ export const create = mutation({
     associationId: v.id("associations"),
     email: v.string(),
     name: v.string(),
-    unit: v.optional(v.string()),
     role: v.union(v.literal("admin"), v.literal("member")),
+    // New: optional multi-unit assignment at creation time
+    unitIds: v.optional(v.array(v.id("units"))),
+    // Backward compatibility: allow legacy single unit name
+    unit: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const userId = await getClerkUserId(ctx);
@@ -220,18 +329,21 @@ export const create = mutation({
       throw new Error("Member with this email already exists");
     }
 
-    // Validate unit if provided
-    if (args.unit) {
+    // Validate unitIds if provided (and map legacy unit name if provided)
+    let unitIdsToAssign: Array<Id<"units">> = [];
+    if (args.unitIds && args.unitIds.length > 0) {
+      unitIdsToAssign = args.unitIds;
+    } else if (args.unit) {
       const unit = await ctx.db
         .query("units")
-        .withIndex("by_association_and_name", (q) => 
+        .withIndex("by_association_and_name", (q) =>
           q.eq("associationId", args.associationId).eq("name", args.unit!)
         )
         .first();
-
       if (!unit) {
         throw new Error("Unit not found");
       }
+      unitIdsToAssign = [unit._id];
     }
 
     // Check member limit for the association
@@ -254,11 +366,42 @@ export const create = mutation({
     }
 
     const memberId = await ctx.db.insert("members", {
-      ...args,
+      associationId: args.associationId,
+      email: args.email,
+      name: args.name,
+      // userId will be set upon acceptance when we know who claimed the invite
+      role: args.role,
       status: "invited",
       invitedBy: userId,
       invitedAt: Date.now(),
     });
+
+    // Enforce: a unit can belong to only one member
+    if (unitIdsToAssign.length > 0) {
+      for (const unitId of unitIdsToAssign) {
+        const existing = await ctx.db
+          .query("memberUnits")
+          .withIndex("by_association_and_unit", (q) =>
+            q.eq("associationId", args.associationId).eq("unitId", unitId)
+          )
+          .first();
+        if (existing) {
+          const unitDoc = await ctx.db.get(unitId);
+          const unitName = unitDoc?.name ?? "Unit";
+          throw new Error(`${unitName} is already assigned to another member`);
+        }
+      }
+
+      // Create unit assignments
+      for (const unitId of unitIdsToAssign) {
+        await ctx.db.insert("memberUnits", {
+          associationId: args.associationId,
+          memberId,
+          unitId,
+          createdAt: Date.now(),
+        });
+      }
+    }
 
     // Log the audit event
     try {
@@ -286,7 +429,7 @@ export const create = mutation({
         email: args.email,
         name: args.name,
         inviterName,
-        unit: args.unit,
+        unit: undefined,
         associationId: args.associationId,
       });
     } catch (error) {
@@ -303,8 +446,11 @@ export const update = mutation({
   args: {
     id: v.id("members"),
     name: v.optional(v.string()),
-    unit: v.optional(v.string()),
     role: v.optional(v.union(v.literal("admin"), v.literal("member"))),
+    // New: replace assigned units with this set
+    unitIds: v.optional(v.array(v.id("units"))),
+    // Backward compatibility: allow setting legacy single unit name; ignored if unitIds provided
+    unit: v.optional(v.string()),
   },
   handler: async (ctx, args) => {
     const userId = await getClerkUserId(ctx);
@@ -330,8 +476,72 @@ export const update = mutation({
       throw new Error("Not authorized");
     }
 
-    const { id, ...updates } = args;
+    const { id, unitIds, unit, ...updates } = args;
     await ctx.db.patch(id, updates);
+
+    // If unitIds provided, replace all assignments for this member
+    if (unitIds) {
+      // Enforce: a unit can belong to only one member
+      for (const unitId of unitIds) {
+        const existing = await ctx.db
+          .query("memberUnits")
+          .withIndex("by_association_and_unit", (q) =>
+            q.eq("associationId", member.associationId).eq("unitId", unitId)
+          )
+          .first();
+        if (existing && existing.memberId !== id) {
+          const unitDoc = await ctx.db.get(unitId);
+          const unitName = unitDoc?.name ?? "Unit";
+          throw new Error(`${unitName} is already assigned to another member`);
+        }
+      }
+
+      // Delete existing assignments
+      const current = await ctx.db
+        .query("memberUnits")
+        .withIndex("by_association_and_member", (q) =>
+          q.eq("associationId", member.associationId).eq("memberId", id)
+        )
+        .collect();
+      for (const row of current) {
+        await ctx.db.delete(row._id);
+      }
+      // Insert new ones
+      for (const unitId of unitIds) {
+        await ctx.db.insert("memberUnits", {
+          associationId: member.associationId,
+          memberId: id,
+          unitId,
+          createdAt: Date.now(),
+        });
+      }
+    } else if (typeof unit === "string") {
+      // Legacy: map the single unit name to an id and set as the sole assignment
+      const u = await ctx.db
+        .query("units")
+        .withIndex("by_association_and_name", (q) =>
+          q.eq("associationId", member.associationId).eq("name", unit)
+        )
+        .first();
+      // Clear existing and insert if found; if not found, clear assignments
+      const current = await ctx.db
+        .query("memberUnits")
+        .withIndex("by_association_and_member", (q) =>
+          q.eq("associationId", member.associationId).eq("memberId", id)
+        )
+        .collect();
+      for (const row of current) {
+        await ctx.db.delete(row._id);
+      }
+      if (u) {
+        await ctx.db.insert("memberUnits", {
+          associationId: member.associationId,
+          memberId: id,
+          unitId: u._id,
+          createdAt: Date.now(),
+        });
+      }
+    }
     return id;
   },
 });

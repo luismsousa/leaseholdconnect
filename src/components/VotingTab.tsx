@@ -10,7 +10,9 @@ interface VotingTabProps {
 
 export function VotingTab({ associationId }: VotingTabProps) {
   const topics = useQuery(api.voting.listTopics, { associationId });
+  const userAssociations = useQuery(api.associations.getUserAssociations);
   const createTopic = useMutation(api.voting.createTopic);
+  const proposeTopic = useMutation(api.voting.proposeTopic);
   const updateTopic = useMutation(api.voting.updateTopic);
   const vote = useMutation(api.voting.vote);
   const getUserVote = useQuery(api.voting.getUserVote, 
@@ -28,6 +30,13 @@ export function VotingTab({ associationId }: VotingTabProps) {
     allowMultipleVotes: false,
   });
 
+  // Check if current user is an admin of this association
+  const isAdmin = userAssociations?.some(
+    (association) =>
+      association?._id === associationId &&
+      (association?.role === "owner" || association?.role === "admin"),
+  );
+
   const handleCreateTopic = async (e: React.FormEvent) => {
     e.preventDefault();
     try {
@@ -44,18 +53,29 @@ export function VotingTab({ associationId }: VotingTabProps) {
         toast.error("At least 2 options are required");
         return;
       }
-
-      await createTopic({
-        associationId,
-        title: topicForm.title,
-        description: topicForm.description,
-        options: validOptions,
-        startDate,
-        endDate,
-        allowMultipleVotes: topicForm.allowMultipleVotes,
-      });
-      
-      toast.success("Voting topic created successfully");
+      if (isAdmin) {
+        await createTopic({
+          associationId,
+          title: topicForm.title,
+          description: topicForm.description,
+          options: validOptions,
+          startDate,
+          endDate,
+          allowMultipleVotes: topicForm.allowMultipleVotes,
+        });
+        toast.success("Voting topic created successfully");
+      } else {
+        await proposeTopic({
+          associationId,
+          title: topicForm.title,
+          description: topicForm.description,
+          options: validOptions,
+          startDate,
+          endDate,
+          allowMultipleVotes: topicForm.allowMultipleVotes,
+        });
+        toast.success("Proposal submitted. Only you and admins can see it until activated.");
+      }
       setTopicForm({
         title: "",
         description: "",
@@ -131,13 +151,13 @@ export function VotingTab({ associationId }: VotingTabProps) {
           onClick={() => setShowCreateForm(true)}
           className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
         >
-          Create Vote
+          {isAdmin ? "Create Vote" : "Propose Topic"}
         </button>
       </div>
 
       {showCreateForm && (
         <div className="mb-6 p-4 border border-slate-200 rounded-lg bg-slate-50">
-          <h3 className="text-lg font-semibold mb-4">Create New Vote</h3>
+          <h3 className="text-lg font-semibold mb-4">{isAdmin ? "Create New Vote" : "Propose New Topic"}</h3>
           <form onSubmit={handleCreateTopic} className="space-y-4">
             <div>
               <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -244,7 +264,7 @@ export function VotingTab({ associationId }: VotingTabProps) {
                 type="submit"
                 className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
               >
-                Create Vote
+                {isAdmin ? "Create Vote" : "Submit Proposal"}
               </button>
               <button
                 type="button"
@@ -273,7 +293,7 @@ export function VotingTab({ associationId }: VotingTabProps) {
         <div className="text-center py-8">
           <div className="text-slate-400 text-4xl mb-4">🗳️</div>
           <h3 className="text-lg font-medium text-slate-900 mb-2">No votes yet</h3>
-          <p className="text-slate-600">Create your first voting topic to get started.</p>
+          <p className="text-slate-600">{isAdmin ? "Create your first voting topic to get started." : "Propose a topic to get started. Admins will review and activate it."}</p>
         </div>
       )}
     </div>
@@ -287,6 +307,13 @@ function VotingTopicCard({ topic, onVote, onActivate }: {
 }) {
   const [selectedOptions, setSelectedOptions] = useState<string[]>([]);
   const userVote = useQuery(api.voting.getUserVote, { topicId: topic._id });
+  const userAssociations = useQuery(api.associations.getUserAssociations);
+
+  const isAdmin = userAssociations?.some(
+    (association: any) =>
+      association?._id === topic.associationId &&
+      (association?.role === "owner" || association?.role === "admin"),
+  );
 
   const now = Date.now();
   const isActive = topic.status === "active" && now >= topic.startDate && now <= topic.endDate;
@@ -327,6 +354,11 @@ function VotingTopicCard({ topic, onVote, onActivate }: {
               {new Date(topic.startDate).toLocaleDateString()} - {new Date(topic.endDate).toLocaleDateString()}
             </span>
             <span>{topic.totalVotes} votes</span>
+            {typeof topic.unitsVoted === "number" && typeof topic.totalUnits === "number" && (
+              <span>
+                {topic.unitsVoted} of {topic.totalUnits} units ({(topic.unitsVotedPercent || 0).toFixed(1)}%) voted
+              </span>
+            )}
           </div>
         </div>
         <div className="flex flex-col items-end space-y-2">
@@ -339,7 +371,7 @@ function VotingTopicCard({ topic, onVote, onActivate }: {
           }`}>
             {topic.status}
           </span>
-          {topic.status === "draft" && (
+          {isAdmin && topic.status === "draft" && (
             <button
               onClick={() => onActivate(topic._id)}
               className="text-xs px-2 py-1 bg-blue-100 text-blue-700 rounded hover:bg-blue-200"

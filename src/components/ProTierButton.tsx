@@ -8,13 +8,15 @@ interface ProTierButtonProps {
   selectedAssociationId?: Id<"associations"> | null;
   buttonText?: string;
   variant?: 'primary' | 'secondary' | 'outline';
+  billingInterval?: 'monthly' | 'yearly';
 }
 
 export function ProTierButton({ 
   className, 
   selectedAssociationId, 
-  buttonText = "Sign up for Pro",
-  variant = 'primary'
+  buttonText = "Start Free Trial",
+  variant = 'primary',
+  billingInterval = 'monthly'
 }: ProTierButtonProps) {
   const { isSignedIn } = useUser();
   const [showPayment, setShowPayment] = useState(false);
@@ -41,6 +43,7 @@ export function ProTierButton({
         isSignedIn={true}
         selectedAssociationId={selectedAssociationId}
         tier="pro"
+        billingInterval={billingInterval}
         buttonText="Complete Pro Subscription"
         variant={variant}
       />
@@ -55,6 +58,7 @@ export function ProTierButton({
         isSignedIn={true}
         selectedAssociationId={selectedAssociationId}
         tier="pro"
+        billingInterval={billingInterval}
         buttonText={buttonText}
         variant={variant}
       />

@@ -10,10 +10,11 @@ interface UnitsTabProps {
 
 export function UnitsTab({ associationId }: UnitsTabProps) {
   const units = useQuery(api.units.list, { associationId });
-  const members = useQuery(api.members.list, { associationId });
+  const members = useQuery(api.members.listWithUnits, { associationId });
   const createUnit = useMutation(api.units.create);
   const updateUnit = useMutation(api.units.update);
   const removeUnit = useMutation(api.units.remove);
+  const userAssociations = useQuery(api.associations.getUserAssociations);
 
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [selectedBuildingFilter, setSelectedBuildingFilter] =
@@ -35,6 +36,46 @@ export function UnitsTab({ associationId }: UnitsTabProps) {
     type: "",
     size: "",
   });
+  const [showSuggestions, setShowSuggestions] = useState(false);
+
+  // Check if current user is an admin of this association
+  const isAdmin = userAssociations?.some(
+    (association) =>
+      association?._id === associationId &&
+      (association?.role === "owner" || association?.role === "admin"),
+  );
+
+  // Generate suggestions based on existing unit names
+  const getSuggestions = (input: string) => {
+    if (!units) return [];
+    
+    // If no input, show all units (up to 5) as suggestions
+    if (!input.trim()) {
+      return units
+        .slice(0, 5)
+        .map(unit => ({
+          name: unit.name,
+          building: unit.building,
+          display: unit.building ? `${unit.name} (${unit.building})` : unit.name
+        }));
+    }
+    
+    const inputLower = input.toLowerCase();
+    return units
+      .filter(unit => 
+        unit.name.toLowerCase().includes(inputLower) ||
+        (unit.building && unit.building.toLowerCase().includes(inputLower))
+      )
+      .map(unit => ({
+        name: unit.name,
+        building: unit.building,
+        display: unit.building ? `${unit.name} (${unit.building})` : unit.name
+      }))
+      .slice(0, 5); // Limit to 5 suggestions
+  };
+
+  const suggestions = getSuggestions(unitForm.name);
+  
 
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();
@@ -58,6 +99,7 @@ export function UnitsTab({ associationId }: UnitsTabProps) {
           size: "",
         });
         setShowCreateForm(false);
+        setShowSuggestions(false);
       })
       .catch((error) => {
         toast.error("Failed to create unit: " + (error as Error).message);
@@ -88,8 +130,7 @@ export function UnitsTab({ associationId }: UnitsTabProps) {
 
   const handleRemove = (unitId: Id<"units">, unitName: string) => {
     // Check if unit has members assigned
-    const unitMembers =
-      members?.filter((member) => member.unit === unitName) || [];
+    const unitMembers = members?.filter((member) => member.units?.some(u => u.name === unitName)) || [];
 
     if (unitMembers.length > 0) {
       const memberNames = unitMembers.map((m) => m.name).join(", ");
@@ -111,6 +152,15 @@ export function UnitsTab({ associationId }: UnitsTabProps) {
       .catch((error) => {
         toast.error("Failed to remove unit: " + (error as Error).message);
       });
+  };
+
+  const handleSuggestionClick = (suggestion: { name: string; building: string | undefined }) => {
+    setUnitForm(prev => ({
+      ...prev,
+      name: suggestion.name,
+      building: suggestion.building || ""
+    }));
+    setShowSuggestions(false);
   };
 
   if (!units || !members) {
@@ -147,12 +197,14 @@ export function UnitsTab({ associationId }: UnitsTabProps) {
               </option>
             ))}
           </select>
-          <button
-            onClick={() => setShowCreateForm(true)}
-            className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-          >
-            Add Unit
-          </button>
+          {isAdmin && (
+            <button
+              onClick={() => setShowCreateForm(true)}
+              className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              Add Unit
+            </button>
+          )}
         </div>
       </div>
 
@@ -164,24 +216,21 @@ export function UnitsTab({ associationId }: UnitsTabProps) {
         </div>
         <div className="bg-slate-50 border border-slate-200 rounded-lg p-4">
           <div className="text-2xl font-bold text-slate-600">
-            {
-              members.filter((member) => {
-                if (!member.unit || member.status !== "active") return false;
-                // Only count if the unit actually exists
-                return units.some((unit) => unit.name === member.unit);
-              }).length
-            }
+            {members.filter((member) => {
+              if (member.status !== "active") return false;
+              return member.units && member.units.length > 0;
+            }).length}
           </div>
           <div className="text-sm text-slate-700">Occupied Units</div>
         </div>
       </div>
 
-      {showCreateForm && (
+      {isAdmin && showCreateForm && (
         <div className="mb-6 p-4 border border-slate-200 rounded-lg bg-slate-50">
           <h3 className="text-lg font-semibold mb-4">Add New Unit</h3>
           <form onSubmit={handleCreate} className="space-y-4">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
+              <div className="relative">
                 <label className="block text-sm font-medium text-slate-700 mb-1">
                   Unit Name *
                 </label>
@@ -189,12 +238,35 @@ export function UnitsTab({ associationId }: UnitsTabProps) {
                   type="text"
                   required
                   value={unitForm.name}
-                  onChange={(e) =>
-                    setUnitForm({ ...unitForm, name: e.target.value })
-                  }
+                  onChange={(e) => {
+                    setUnitForm({ ...unitForm, name: e.target.value });
+                    setShowSuggestions(true);
+                  }}
+                  onFocus={() => setShowSuggestions(true)}
+                  onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
                   className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                   placeholder="e.g., 101, A-1, Unit 5"
                 />
+                {showSuggestions && suggestions.length > 0 && (
+                  <div className="absolute z-10 w-full mt-1 bg-white border border-slate-300 rounded-md shadow-lg max-h-60 overflow-auto">
+                    <div className="p-2 text-xs text-slate-500 border-b border-slate-200">
+                      Existing units (click to fill): {suggestions.length} found
+                    </div>
+                    {suggestions.map((suggestion, index) => (
+                      <button
+                        key={index}
+                        type="button"
+                        onClick={() => handleSuggestionClick(suggestion)}
+                        className="w-full text-left px-3 py-2 hover:bg-slate-100 focus:bg-slate-100 focus:outline-none text-sm"
+                      >
+                        <div className="font-medium">{suggestion.name}</div>
+                        {suggestion.building && (
+                          <div className="text-xs text-slate-500">{suggestion.building}</div>
+                        )}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -267,21 +339,26 @@ export function UnitsTab({ associationId }: UnitsTabProps) {
                 placeholder="Additional details about the unit..."
               />
             </div>
-            <div className="flex space-x-3">
-              <button
-                type="submit"
-                className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                Create Unit
-              </button>
-              <button
-                type="button"
-                onClick={() => setShowCreateForm(false)}
-                className="px-4 py-2 bg-slate-300 text-slate-700 rounded-md hover:bg-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-500"
-              >
-                Cancel
-              </button>
-            </div>
+              {isAdmin && (
+                <div className="flex space-x-3">
+                  <button
+                    type="submit"
+                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    Create Unit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowCreateForm(false);
+                      setShowSuggestions(false);
+                    }}
+                    className="px-4 py-2 bg-slate-300 text-slate-700 rounded-md hover:bg-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-500"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
           </form>
         </div>
       )}
@@ -333,11 +410,10 @@ export function UnitsTab({ associationId }: UnitsTabProps) {
                 {members && (
                   <div>
                     <strong>Members:</strong>
-                    {members.filter((member) => member.unit === unit.name)
-                      .length > 0 ? (
+                    {members.some((member) => member.units?.some(u => u.name === unit.name)) ? (
                       <ul className="mt-1 space-y-1">
                         {members
-                          .filter((member) => member.unit === unit.name)
+                          .filter((member) => member.units?.some(u => u.name === unit.name))
                           .map((member) => (
                             <li
                               key={member._id}
@@ -356,30 +432,32 @@ export function UnitsTab({ associationId }: UnitsTabProps) {
                 )}
               </div>
 
-              <div className="flex space-x-2">
-                <button
-                  onClick={() =>
-                    setEditingUnit({
-                      id: unit._id,
-                      name: unit.name,
-                      description: unit.description || "",
-                      building: unit.building || "",
-                      floor: unit.floor?.toString() || "",
-                      type: unit.type || "",
-                      size: unit.size || "",
-                    })
-                  }
-                  className="flex-1 px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
-                >
-                  Edit
-                </button>
-                <button
-                  onClick={() => handleRemove(unit._id, unit.name)}
-                  className="flex-1 px-3 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200"
-                >
-                  Remove
-                </button>
-              </div>
+              {isAdmin && (
+                <div className="flex space-x-2">
+                  <button
+                    onClick={() =>
+                      setEditingUnit({
+                        id: unit._id,
+                        name: unit.name,
+                        description: unit.description || "",
+                        building: unit.building || "",
+                        floor: unit.floor?.toString() || "",
+                        type: unit.type || "",
+                        size: unit.size || "",
+                      })
+                    }
+                    className="flex-1 px-3 py-1 text-sm bg-blue-100 text-blue-700 rounded hover:bg-blue-200"
+                  >
+                    Edit
+                  </button>
+                  <button
+                    onClick={() => handleRemove(unit._id, unit.name)}
+                    className="flex-1 px-3 py-1 text-sm bg-red-100 text-red-700 rounded hover:bg-red-200"
+                  >
+                    Remove
+                  </button>
+                </div>
+              )}
             </div>
           ))}
       </div>
@@ -403,13 +481,13 @@ export function UnitsTab({ associationId }: UnitsTabProps) {
         </div>
       )}
 
-      {editingUnit && (
+      {isAdmin && editingUnit && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-lg p-6 w-full max-w-2xl max-h-[90vh] overflow-y-auto">
             <h3 className="text-lg font-semibold mb-4">Edit Unit</h3>
             <form onSubmit={handleUpdate} className="space-y-4">
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
+                <div className="relative">
                   <label className="block text-sm font-medium text-slate-700 mb-1">
                     Unit Name *
                   </label>
@@ -417,12 +495,42 @@ export function UnitsTab({ associationId }: UnitsTabProps) {
                     type="text"
                     required
                     value={editingUnit.name}
-                    onChange={(e) =>
-                      setEditingUnit({ ...editingUnit, name: e.target.value })
-                    }
+                    onChange={(e) => {
+                      setEditingUnit({ ...editingUnit, name: e.target.value });
+                      setShowSuggestions(true);
+                    }}
+                    onFocus={() => setShowSuggestions(true)}
+                    onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
                     className="w-full px-3 py-2 border border-slate-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
                     placeholder="e.g., 101, A-1, Unit 5"
                   />
+                  {showSuggestions && suggestions.length > 0 && (
+                    <div className="absolute z-10 w-full mt-1 bg-white border border-slate-300 rounded-md shadow-lg max-h-60 overflow-auto">
+                      <div className="p-2 text-xs text-slate-500 border-b border-slate-200">
+                        Existing units (click to fill):
+                      </div>
+                      {suggestions.map((suggestion, index) => (
+                        <button
+                          key={index}
+                          type="button"
+                          onClick={() => {
+                            setEditingUnit(prev => prev ? {
+                              ...prev,
+                              name: suggestion.name,
+                              building: suggestion.building || ""
+                            } : null);
+                            setShowSuggestions(false);
+                          }}
+                          className="w-full text-left px-3 py-2 hover:bg-slate-100 focus:bg-slate-100 focus:outline-none text-sm"
+                        >
+                          <div className="font-medium">{suggestion.name}</div>
+                          {suggestion.building && (
+                            <div className="text-xs text-slate-500">{suggestion.building}</div>
+                          )}
+                        </button>
+                      ))}
+                    </div>
+                  )}
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-slate-700 mb-1">
@@ -501,21 +609,26 @@ export function UnitsTab({ associationId }: UnitsTabProps) {
                   placeholder="Additional details about the unit..."
                 />
               </div>
-              <div className="flex space-x-3">
-                <button
-                  type="submit"
-                  className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
-                >
-                  Update Unit
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setEditingUnit(null)}
-                  className="px-4 py-2 bg-slate-300 text-slate-700 rounded-md hover:bg-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-500"
-                >
-                  Cancel
-                </button>
-              </div>
+              {isAdmin && (
+                <div className="flex space-x-3">
+                  <button
+                    type="submit"
+                    className="px-4 py-2 bg-blue-600 text-white rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    Update Unit
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEditingUnit(null);
+                      setShowSuggestions(false);
+                    }}
+                    className="px-4 py-2 bg-slate-300 text-slate-700 rounded-md hover:bg-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-500"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              )}
             </form>
           </div>
         </div>

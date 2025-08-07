@@ -33,6 +33,7 @@ export function MeetingsTab({ associationId }: MeetingsTabProps) {
   const [activeTab, setActiveTab] = useState("all");
 
   const meetings = useQuery(api.meetings.list, { associationId });
+  const userAssociations = useQuery(api.associations.getUserAssociations);
   const votingTopics = useQuery(api.voting.listTopics, { associationId });
   const documents = useQuery(api.documents.list, { associationId });
   const units = useQuery(api.units.listForMembers, { associationId });
@@ -55,6 +56,13 @@ export function MeetingsTab({ associationId }: MeetingsTabProps) {
     invitedUnits: [],
     agenda: [],
   });
+
+  // Check if current user is an admin of this association
+  const isAdmin = userAssociations?.some(
+    (association) =>
+      association?._id === associationId &&
+      (association?.role === "owner" || association?.role === "admin"),
+  );
 
   const resetForm = () => {
     setFormData({
@@ -239,16 +247,18 @@ export function MeetingsTab({ associationId }: MeetingsTabProps) {
             Manage association meetings and events
           </p>
         </div>
-        <button
-          onClick={() => {
-            resetForm();
-            setIsCreateDialogOpen(true);
-          }}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center"
-        >
-          <span className="mr-2">+</span>
-          Create Meeting
-        </button>
+        {isAdmin && (
+          <button
+            onClick={() => {
+              resetForm();
+              setIsCreateDialogOpen(true);
+            }}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center"
+          >
+            <span className="mr-2">+</span>
+            Create Meeting
+          </button>
+        )}
       </div>
 
       {/* Tab Navigation */}
@@ -303,7 +313,7 @@ export function MeetingsTab({ associationId }: MeetingsTabProps) {
                       </p>
                     </div>
                     <div className="flex gap-1">
-                      {meeting.status === "draft" && (
+                      {isAdmin && meeting.status === "draft" && (
                         <>
                           <button
                             onClick={() => handleEditMeeting(meeting)}
@@ -323,7 +333,7 @@ export function MeetingsTab({ associationId }: MeetingsTabProps) {
                           </button>
                         </>
                       )}
-                      {meeting.status === "scheduled" && (
+                      {isAdmin && meeting.status === "scheduled" && (
                         <>
                           <button
                             onClick={() =>
@@ -345,7 +355,7 @@ export function MeetingsTab({ associationId }: MeetingsTabProps) {
                           </button>
                         </>
                       )}
-                      {meeting.status === "completed" && (
+                      {isAdmin && meeting.status === "completed" && (
                         <button
                           onClick={() =>
                             handleStatusChange(meeting._id as Id<"meetings">, "archive")
@@ -356,13 +366,15 @@ export function MeetingsTab({ associationId }: MeetingsTabProps) {
                           📦
                         </button>
                       )}
-                      <button
-                        onClick={() => handleDeleteMeeting(meeting._id as Id<"meetings">)}
-                        className="p-1 text-red-600 hover:text-red-800"
-                        title="Delete"
-                      >
-                        🗑️
-                      </button>
+                      {isAdmin && (
+                        <button
+                          onClick={() => handleDeleteMeeting(meeting._id as Id<"meetings">)}
+                          className="p-1 text-red-600 hover:text-red-800"
+                          title="Delete"
+                        >
+                          🗑️
+                        </button>
+                      )}
                     </div>
                   </div>
                   {getStatusBadge(meeting.status)}
@@ -399,7 +411,7 @@ export function MeetingsTab({ associationId }: MeetingsTabProps) {
       </div>
 
       {/* Create Meeting Modal */}
-      {isCreateDialogOpen && (
+      {isAdmin && isCreateDialogOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 max-w-4xl max-h-[90vh] overflow-y-auto w-full mx-4">
             <div className="flex justify-between items-center mb-6">
@@ -429,7 +441,7 @@ export function MeetingsTab({ associationId }: MeetingsTabProps) {
       )}
 
       {/* Edit Meeting Modal */}
-      {isEditDialogOpen && (
+      {isAdmin && isEditDialogOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white rounded-lg p-6 max-w-4xl max-h-[90vh] overflow-y-auto w-full mx-4">
             <div className="flex justify-between items-center mb-6">

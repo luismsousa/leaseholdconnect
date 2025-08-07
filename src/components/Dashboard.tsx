@@ -10,6 +10,7 @@ import { MeetingsTab } from "./MeetingsTab";
 import { VotingTab } from "./VotingTab";
 import { AuditTab } from "./AuditTab";
 import { UserPreferencesTab } from "./UserPreferencesTab";
+import { NoAssociationScreen } from "./NoAssociationScreen";
 
 type Tab =
   | "overview"
@@ -31,9 +32,19 @@ export function Dashboard() {
   const [selectedAssociationId, setSelectedAssociationId] =
     useState<Id<"associations"> | null>(null);
   const [activeTab, setActiveTab] = useState<Tab>("overview");
+  const [associationJustCreated, setAssociationJustCreated] = useState(false);
 
   // Get user's associations to auto-select first one if none selected
   const userAssociations = useQuery(api.associations.getUserAssociations);
+  // Determine if current user is admin of the selected association
+  const isAssociationAdmin =
+    selectedAssociationId && userAssociations
+      ? userAssociations.some(
+          (association) =>
+            association?._id === selectedAssociationId &&
+            (association?.role === "owner" || association?.role === "admin"),
+        )
+      : false;
 
   // Initialize selected association from user preferences or auto-select first one
   useEffect(() => {
@@ -43,14 +54,17 @@ export function Dashboard() {
       !isPaasAdmin &&
       userAssociations &&
       userAssociations.length > 0 &&
-      !selectedAssociationId
+      (!selectedAssociationId || associationJustCreated)
     ) {
       // Auto-select first association for non-PaaS admins if none is selected
+      // or if an association was just created
       const firstAssociation = userAssociations[0];
       if (firstAssociation) {
         setSelectedAssociationId(firstAssociation._id);
         // Also update user preferences to persist this selection
         void setSelectedAssociation({ associationId: firstAssociation._id });
+        // Reset the flag after selecting the association
+        setAssociationJustCreated(false);
       }
     }
   }, [
@@ -59,7 +73,40 @@ export function Dashboard() {
     isPaasAdmin,
     selectedAssociationId,
     setSelectedAssociation,
+    associationJustCreated,
   ]);
+
+  // Ensure the active tab is valid for the user's role
+  useEffect(() => {
+    if (
+      selectedAssociationId &&
+      !isAssociationAdmin &&
+      (activeTab === "members" || activeTab === "units")
+    ) {
+      setActiveTab("documents");
+    }
+  }, [selectedAssociationId, isAssociationAdmin, activeTab]);
+
+  // Show loading while checking user associations
+  if (userAssociations === undefined) {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-32 w-32 border-b-2 border-blue-600"></div>
+      </div>
+    );
+  }
+
+  // Show NoAssociationScreen if user has no associations and is not a PaaS admin
+  if (!isPaasAdmin && userAssociations.length === 0) {
+    return (
+      <NoAssociationScreen
+        onAssociationCreated={() => {
+          setAssociationJustCreated(true);
+          // The useEffect above will handle selecting the new association
+        }}
+      />
+    );
+  }
 
   const handleAssociationChange = async (
     associationId: Id<"associations"> | null,
@@ -77,6 +124,16 @@ export function Dashboard() {
     { id: "voting", name: "Voting", icon: "🗳️" },
     { id: "audit", name: "Audit Log", icon: "📋" },
   ];
+
+  // Filter out admin-only tabs when the user isn't an admin of the selected association
+  const visibleTabs = tabs.filter((tab) => {
+    if (!selectedAssociationId) return tab.id === "overview"; // only overview without selection
+    if (tab.id === "members" || tab.id === "units") {
+      return isAssociationAdmin;
+    }
+    return true;
+  });
+
 
   const renderTabContent = () => {
     if (!selectedAssociationId) return null;
@@ -103,7 +160,9 @@ export function Dashboard() {
               Welcome to your Association Dashboard
             </h2>
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-              {tabs.slice(1).map((tab) => (
+              {visibleTabs
+                .filter((tab) => tab.id !== "overview")
+                .map((tab) => (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id as Tab)}
@@ -170,7 +229,7 @@ export function Dashboard() {
         <nav className="bg-white border-b border-slate-200">
           <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div className="flex space-x-8">
-              {tabs.map((tab) => (
+              {visibleTabs.map((tab) => (
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id as Tab)}

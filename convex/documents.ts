@@ -90,24 +90,43 @@ export const list = query({
         // Get user's email from auth context
         const identity = await ctx.auth.getUserIdentity();
         if (identity?.email) {
-          // Get member's building from their unit
+          // Find member for this association
           const member = await ctx.db
             .query("members")
-            .withIndex("by_association_and_email", (q) => 
+            .withIndex("by_association_and_email", (q) =>
               q.eq("associationId", args.associationId).eq("email", identity.email!)
             )
             .first();
 
-          if (member && member.unit) {
-            // Get the building for the member's unit
-            const unit = await ctx.db
-              .query("units")
-              .withIndex("by_association_and_name", (q) => 
-                q.eq("associationId", args.associationId).eq("name", member.unit!)
+          if (member) {
+            // Preferred path: use many-to-many assignments
+            const assignments = await ctx.db
+              .query("memberUnits")
+              .withIndex("by_association_and_member", (q) =>
+                q.eq("associationId", args.associationId).eq("memberId", member._id)
               )
-              .first();
+              .collect();
 
-            if (unit && unit.building && doc.visibleToBuildings.includes(unit.building)) {
+            let memberBuildings = new Set<string>();
+            if (assignments.length > 0) {
+              const unitDocs = await Promise.all(assignments.map((a) => ctx.db.get(a.unitId)));
+              for (const u of unitDocs) {
+                if (u?.building) memberBuildings.add(u.building);
+              }
+            } else if (member.unit) {
+              // Legacy path: fallback to single unit name on member
+              const unit = await ctx.db
+                .query("units")
+                .withIndex("by_association_and_name", (q) =>
+                  q.eq("associationId", args.associationId).eq("name", member.unit!)
+                )
+                .first();
+              if (unit?.building) memberBuildings.add(unit.building);
+            }
+
+            if (
+              Array.from(memberBuildings).some((b) => doc.visibleToBuildings!.includes(b))
+            ) {
               filteredDocuments.push(doc);
             }
           }
