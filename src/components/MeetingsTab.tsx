@@ -179,12 +179,30 @@ export function MeetingsTab({ associationId }: MeetingsTabProps) {
   };
 
   const updateAgendaItem = (index: number, field: string, value: any) => {
-    setFormData((prev) => ({
-      ...prev,
-      agenda: prev.agenda.map((item, i) =>
-        i === index ? { ...item, [field]: value } : item,
-      ),
-    }));
+    setFormData((prev) => {
+      const updatedAgenda = prev.agenda.map((item, i) => {
+        if (i !== index) return item;
+        const updated = { ...item, [field]: value };
+
+        // If switching away from voting, clear the linked topic
+        if (field === "type" && value !== "voting") {
+          updated.votingTopicId = undefined;
+        }
+
+        // When selecting a voting topic, auto-fill title and description
+        if (field === "votingTopicId") {
+          const topic = votingTopics?.find((t: any) => t._id === value);
+          if (topic) {
+            updated.title = topic.title;
+            updated.description = topic.description;
+          }
+        }
+
+        return updated;
+      });
+
+      return { ...prev, agenda: updatedAgenda };
+    });
   };
 
   const removeAgendaItem = (index: number) => {
@@ -491,7 +509,7 @@ function MeetingForm({
   formData,
   setFormData,
   votingTopics,
-  documents,
+  documents: _documents,
   units,
   addAgendaItem,
   updateAgendaItem,
@@ -500,6 +518,57 @@ function MeetingForm({
   submitLabel,
   onCancel,
 }: MeetingFormProps) {
+  // Building-level quick selection helpers
+  const buildingNames: string[] = Array.from(
+    new Set<string>((units ?? []).map((u: any) => (u.building || "Unassigned") as string)),
+  ).sort();
+
+  const getUnitsForBuilding = (building: string): Array<string> => {
+    return (units ?? [])
+      .filter((u: any) => (u.building || "Unassigned") === building)
+      .map((u: any) => u.name);
+  };
+
+  const isBuildingFullySelected = (building: string): boolean => {
+    const names = getUnitsForBuilding(building);
+    if (names.length === 0) return false;
+    return names.every((n) => formData.invitedUnits.includes(n));
+  };
+
+  const isBuildingPartiallySelected = (building: string): boolean => {
+    const names = getUnitsForBuilding(building);
+    const anySelected = names.some((n) => formData.invitedUnits.includes(n));
+    return anySelected && !isBuildingFullySelected(building);
+  };
+
+  const selectBuilding = (building: string) => {
+    const names = getUnitsForBuilding(building);
+    const merged = Array.from(new Set([...formData.invitedUnits, ...names]));
+    setFormData({ ...formData, invitedUnits: merged });
+  };
+
+  const deselectBuilding = (building: string) => {
+    const names = new Set(getUnitsForBuilding(building));
+    const filtered = formData.invitedUnits.filter((n) => !names.has(n));
+    setFormData({ ...formData, invitedUnits: filtered });
+  };
+
+  const toggleBuilding = (building: string) => {
+    if (isBuildingFullySelected(building)) {
+      deselectBuilding(building);
+    } else {
+      selectBuilding(building);
+    }
+  };
+
+  const selectAllUnits = () => {
+    const allNames = (units ?? []).map((u: any) => u.name);
+    setFormData({ ...formData, invitedUnits: Array.from(new Set(allNames)) });
+  };
+
+  const clearAllUnits = () => {
+    setFormData({ ...formData, invitedUnits: [] });
+  };
   return (
     <div className="space-y-6">
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -625,6 +694,52 @@ function MeetingForm({
             <label className="block text-sm font-medium text-gray-700 mb-1">
               Select specific units to invite
             </label>
+            {/* Quick select by building */}
+            <div className="flex flex-col gap-2 mb-2">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-gray-600">Quick select by building</span>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={selectAllUnits}
+                    className="text-xs px-2 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+                  >
+                    Select all
+                  </button>
+                  <button
+                    type="button"
+                    onClick={clearAllUnits}
+                    className="text-xs px-2 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
+                  >
+                    Clear
+                  </button>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {buildingNames.map((b) => {
+                  const fully = isBuildingFullySelected(b);
+                  const partial = isBuildingPartiallySelected(b);
+                  return (
+                    <button
+                      key={b}
+                      type="button"
+                      onClick={() => toggleBuilding(b)}
+                      className={
+                        `text-xs px-2 py-1 rounded border ` +
+                        (fully
+                          ? "bg-blue-100 border-blue-300 text-blue-800"
+                          : partial
+                          ? "bg-yellow-50 border-yellow-200 text-yellow-700"
+                          : "bg-white border-gray-300 text-gray-700 hover:bg-gray-50")
+                      }
+                      title={fully ? `Deselect all in ${b}` : `Select all in ${b}`}
+                    >
+                      {b}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
             <div className="max-h-48 overflow-y-auto border border-gray-300 rounded-md p-2">
               {units?.map((unit: any) => (
                 <label
@@ -725,13 +840,19 @@ function MeetingForm({
                 </label>
                 <input
                   type="text"
-                  value={item.title}
-                  onChange={(e) =>
-                    updateAgendaItem(index, "title", e.target.value)
+                  value={
+                    item.type === "voting"
+                      ? (votingTopics?.find((t: any) => t._id === item.votingTopicId)?.title ?? "")
+                      : item.title
                   }
+                  onChange={(e) => updateAgendaItem(index, "title", e.target.value)}
                   placeholder="Agenda item title"
                   className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  disabled={item.type === "voting"}
                 />
+                {item.type === "voting" && (
+                  <p className="text-xs text-gray-500 mt-1">Auto-filled from selected voting topic.</p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -757,14 +878,20 @@ function MeetingForm({
                 Description
               </label>
               <textarea
-                value={item.description || ""}
-                onChange={(e) =>
-                  updateAgendaItem(index, "description", e.target.value)
+                value={
+                  item.type === "voting"
+                    ? (votingTopics?.find((t: any) => t._id === item.votingTopicId)?.description ?? "")
+                    : (item.description || "")
                 }
+                onChange={(e) => updateAgendaItem(index, "description", e.target.value)}
                 placeholder="Agenda item description"
                 rows={2}
                 className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                disabled={item.type === "voting"}
               />
+              {item.type === "voting" && (
+                <p className="text-xs text-gray-500 mt-1">Auto-filled from selected voting topic.</p>
+              )}
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4">
