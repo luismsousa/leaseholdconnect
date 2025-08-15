@@ -45,7 +45,7 @@
     "@types/node": "^22.13.10",
     "@types/react": "^19.0.10",
     "@types/react-dom": "^19.0.4",
-    "@types/xlsx": "^0.0.35",
+    "@types/xlsx": "^0.0.36",
     "@vitejs/plugin-react": "^4.3.4",
     "autoprefixer": "~10",
     "convex-test": "^0.0.38",
